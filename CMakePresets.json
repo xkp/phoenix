@@ -1,0 +1,67 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "17",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF"
+      }
+    },
+    {
+      "name": "windows-default",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "linux-default",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "build-windows-debug",
+      "configurePreset": "windows-default",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-windows-release",
+      "configurePreset": "windows-default",
+      "configuration": "Release"
+    },
+    {
+      "name": "build-linux-debug",
+      "configurePreset": "linux-default",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-linux-release",
+      "configurePreset": "linux-default",
+      "configuration": "Release"
+    }
+  ]
+}
