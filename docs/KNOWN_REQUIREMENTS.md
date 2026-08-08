@@ -55,6 +55,16 @@ can be made with the full context available.
 - Arrays should be supported as types.
 - Version one should support at least basic literal values.
 
+### Geometry And Numeric Constraints
+
+- The implementation must be careful with CGAL exact number types.
+- CGAL exact number types are useful, but they are very expensive in memory and
+  CPU cost.
+- The system should avoid unnecessary use, copying, or propagation of exact
+  numeric representations.
+- Numeric strategy should be designed with explicit awareness of precision
+  versus performance tradeoffs.
+
 ### Missing / Empty / Default
 
 - Missing means no value was dispatched on that port.
@@ -82,6 +92,13 @@ can be made with the full context available.
 - Multiple ready instructions may run in parallel.
 - Deterministic final results matter more than deterministic execution order.
 - Scheduling order must not change final observable results.
+- Parallel execution should assume the existence of a shared execution context.
+- The shared execution context should be immutable.
+- Parallel instruction execution should not rely on mutable shared state.
+- Any per-instruction execution state should be isolated from other concurrently
+  running instructions unless explicitly modeled as immutable input data.
+- Parallelism design should favor immutability first, to reduce synchronization
+  complexity and protect reproducibility.
 
 ### Randomness And Reproducibility
 
