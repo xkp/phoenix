@@ -41,6 +41,15 @@ Deliverables:
 - updated execution model doc
 - explicit list of deferred features
 
+Current status:
+
+- `KNOWN_REQUIREMENTS.md` includes actor hierarchy, instancing, partial rerun,
+  invalidation, failure, and caching requirements.
+- `EXECUTION_MODEL.md` now includes version one actor hierarchy, instancing,
+  partial rerun, scene update, and cache semantics.
+- The remaining low-level choices are implementation details, not behavioral
+  requirement gaps.
+
 ## Phase 1: Define Core Runtime Interfaces
 
 Goal:
@@ -62,6 +71,21 @@ Deliverables:
 
 - header skeletons for core runtime types
 - interface notes for execution, actor creation, and caching
+
+Current status:
+
+- initial header skeletons exist for graph descriptors, runtime values,
+  execution state, seed derivation, actor nodes, and cache entries
+- graph validation and runtime value tests already exist
+
+Remaining Phase 1 work:
+
+- align the existing headers with the full execution model
+- add missing interfaces for instruction execution, function invocation,
+  output collection, actor assembly, invalidation records, and cache key
+  construction
+- decide which interfaces are abstract boundaries and which are concrete value
+  types for slice one
 
 ## Phase 2: Build The Static Graph Model
 
@@ -113,6 +137,13 @@ Deliverables:
 - port-state model
 - geometry wrapper abstraction
 
+Current status:
+
+- completed for the first deterministic executor slice
+- runtime values distinguish missing, empty, present, and defaulted states
+- literal values, geometry wrappers, port fulfillment, and virtual geometry
+  aggregation scaffolding are implemented
+
 ## Phase 4: Implement Deterministic Execution Core
 
 Goal:
@@ -140,6 +171,43 @@ Deliverables:
 
 - single-run execution engine
 - deterministic result test cases
+
+Current status:
+
+- implementation started with a single-threaded deterministic executor
+- instruction handler registration, ready-node execution, output propagation,
+  equilibrium force-running, seed derivation, and output-node collection are in
+  place
+- parallel execution remains intentionally deferred to Phase 11
+
+## Phase 4.5: Implement Function Invocation And Call Stack
+
+Goal:
+
+- support nested function calls before adding failure routing, actor generation,
+  partial reruns, and cache identity
+
+Tasks:
+
+- define a function library for resolving nested function calls
+- define call frames and call-stack ownership
+- push a new frame for each nested function invocation
+- derive stable child call paths from caller path, caller node id, and callee id
+- preserve the actor-context hook on call frames for Phase 7
+- return child function outputs as the function-call instruction outputs
+- propagate child execution failure status to the caller
+
+Deliverables:
+
+- function invocation runtime
+- call stack tests
+
+Current status:
+
+- implementation started with `FunctionLibrary`, `CallFrame`, `CallStack`, and
+  `InstructionDescriptor::called_function_id`
+- nested function-call execution, child call-path derivation, and call-stack
+  frame propagation are in place
 
 ## Phase 5: Implement Error And `else` Flow
 
@@ -192,6 +260,8 @@ Goal:
 Tasks:
 
 - implement root actor creation at top-function execution
+- implement the rule that every function invocation has exactly one actor
+  context
 - implement actor-generating function execution
 - implement child actor creation from nested actor functions
 - implement actor-local geometry accumulation
@@ -337,9 +407,12 @@ Deliverables:
 
 ### Slice 1
 
-- Phases 1 through 4
-- Result: a deterministic single-run graph executor without actors or partial
-  reruns
+- finish Phase 1 interface alignment
+- complete Phase 2 graph model and validation
+- complete Phase 3 runtime value infrastructure
+- complete Phase 4 deterministic single-run executor
+- Result: a deterministic single-run graph executor without actor generation,
+  partial reruns, caching, or parallel execution
 
 ### Slice 2
 
@@ -367,10 +440,14 @@ Deliverables:
 
 ## Immediate Next Step
 
-Before writing code, the next best step is to review this plan against the
-current requirements and decide whether the first implementation slice should
-start at:
+Start implementation by finishing the Phase 1 interface alignment against the
+current headers.
 
-- Phase 1 directly
-- or a short doc pass to tighten `EXECUTION_MODEL.md` against newer actor and
-  partial-run requirements
+Recommended first code task:
+
+- audit `include/phoenix/*.hpp` against `EXECUTION_MODEL.md`
+- add the missing slice-one execution boundaries
+- keep actor, cache, and partial-rerun types skeletal but compatible with their
+  later requirements
+- then implement the deterministic single-run execution engine behind those
+  interfaces

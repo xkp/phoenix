@@ -37,6 +37,7 @@ struct InstructionDescriptor {
     bool multiplexes_input = false;
     bool has_else_port = true;
     std::optional<SeedValue> local_seed;
+    std::optional<FunctionId> called_function_id;
 };
 
 struct FunctionDescriptor {
@@ -46,6 +47,7 @@ struct FunctionDescriptor {
     std::vector<InstructionDescriptor> instructions;
     std::vector<EdgeDescriptor> edges;
     bool generates_actor = false;
+    std::optional<NodeId> output_node_id;
 };
 
 class GraphIndex {

@@ -19,6 +19,10 @@ Version one includes:
 - geometry-first runtime values
 - literal support for basic non-geometry values
 - function-local error propagation through `else`
+- actor hierarchy generation
+- actor-local geometry accumulation
+- instancing through reusable actor prototypes
+- cache-backed partial reruns organized around actor subtrees
 
 Version one does not include:
 
@@ -42,6 +46,26 @@ A function has:
 - edges between output ports and input ports
 
 A function invocation executes exactly one graph instance for one set of inputs.
+
+### 2.1.1 Function Invocation And Call Stack
+
+Nested function calls push a new call frame.
+
+Each call frame records:
+
+- the invoked function id
+- the stable call path for that invocation
+- the caller node id, when the function was invoked by another instruction
+- the current actor context, once actor generation is active
+
+The call path is part of deterministic identity. It participates in seed
+derivation and will later participate in actor ids, cache keys, diagnostics, and
+partial-rerun scope.
+
+When a nested function completes, its function outputs become the outputs of the
+function-call instruction that invoked it. If the nested function fails, the
+failure propagates to the caller; Phase 5 defines how `else` may handle that
+failure.
 
 ### 2.2 Instructions
 
@@ -356,7 +380,165 @@ effective_instruction_seed =
     derive(global_seed, function_call_path, instruction_id, local_seed)
 ```
 
-## 11. Validation Rules
+## 11. Actor Hierarchy
+
+### 11.1 Root Actor
+
+The top-level program produces exactly one root actor.
+
+The root actor is the structural parent for all geometry and child actors
+created during the top-function invocation.
+
+Every function invocation belongs to exactly one actor context.
+
+The top-level function belongs to the root actor. A non-actor-generating nested
+function belongs to the current actor of its caller. An actor-generating nested
+function creates a new child actor and belongs to that new actor for the duration
+of its execution.
+
+### 11.2 Actor-Generating Functions
+
+Some functions are marked as actor-generating functions.
+
+When an actor-generating function runs, it creates one actor for that function
+call. If the function call is multiplexed, it may create one actor per
+multiplexed item.
+
+Actor hierarchy construction is function-driven:
+
+- a parent actor-generating function creates the parent actor
+- an inner actor-generating function creates a child actor under the current
+  actor
+- graph instructions do not generically assemble the hierarchy
+
+### 11.3 Geometry Accumulation
+
+While an actor-generating function is active, geometry produced by regular
+instructions accumulates into the current actor.
+
+When an inner actor-generating function runs, geometry produced inside that
+function belongs to the child actor created by that function.
+
+Geometry produced outside the child actor function continues to accumulate into
+the current parent actor.
+
+### 11.4 Actor Contents
+
+In version one, an actor has:
+
+- an id
+- zero or one name
+- exactly one transform
+- one pivot
+- zero or one geometry payload
+- zero or more child actors
+
+Materials are out of scope for version one.
+
+The pivot belongs to the actor. Geometry is stored in actor-local space relative
+to the actor pivot.
+
+### 11.5 Actor Identity
+
+Actor generation must be deterministic in final content and hierarchy order.
+
+Running the same program with the same seed and input twice must produce an
+identical geometric hierarchy.
+
+Actor ids must remain stable for unaffected ancestors and siblings across
+partial reruns. Rerun actors may receive new ids, although preserving ids for
+retained logical actors is preferred when possible.
+
+## 12. Instancing
+
+Version one instancing means shared generated actor content with distinct
+placements.
+
+Rules:
+
+- an actor may be generated once as a reusable prototype
+- multiple instances may share the same generated actor content
+- each placed instance has its own actor id
+- each placed instance has its own transform
+- version one instances do not support per-instance overrides
+- instance placement is separate from actor generation
+
+Instancing must preserve deterministic hierarchy order.
+
+## 13. Partial Reruns And Scene Updates
+
+### 13.1 Rerun Unit
+
+The smallest rerun unit is one actor subtree.
+
+A single changed instruction may dirty additional instructions and functions,
+but rerun execution is organized around the affected actor subtree.
+
+Initial workflows may be user-induced before full automatic minimal-scope
+calculation exists. The architecture should support both user-selected and
+automatically computed rerun scope.
+
+### 13.2 Invalidation Rule
+
+The canonical invalidation rule is:
+
+- a change invalidates the directly affected instruction or actor subtree
+- invalidation cascades through all downstream dependent instructions
+- if an actor exposes outputs that feed ancestors or other parent-side work,
+  invalidation continues through those dependent paths too
+
+Version one partial reruns must support parameter changes, input geometry
+changes, function body changes, graph wiring changes, and seed changes. Some
+changes, such as a global seed change or top-level input geometry change, may
+still require a full rerun.
+
+### 13.3 Scene Update Rule
+
+After a partial rerun, the scene is updated in place.
+
+The runtime should make the minimum changes needed to reflect the new result:
+
+- if only geometry changes and hierarchy does not, replace only the geometry
+  payload
+- if child actors are removed, they disappear
+- if child actors are added, they receive new ids
+- retained children should keep prior ids when they still represent the same
+  logical actor, when possible
+
+A partial rerun must produce the same final scene as a full rerun from scratch.
+
+### 13.4 Failure During Partial Rerun
+
+If a partial rerun fails because an exception is not handled, the result of that
+configuration is failure.
+
+For version one, the affected subtree is replaced with whatever state exists at
+failure time.
+
+## 14. Caching
+
+Caching is required for partial runs in version one.
+
+Cache keys must include all inputs that can affect deterministic results,
+including:
+
+- parameters
+- geometry inputs
+- seeds
+- function body identity
+- graph wiring identity
+- relevant function call path or actor subtree identity
+
+Cache reuse must not break determinism and must not preserve stale actor
+hierarchy data after invalidation.
+
+Version one should define caches at least for:
+
+- function calls
+- actor subtrees
+- instruction outputs
+
+## 15. Validation Rules
 
 A version one graph must satisfy at least the following:
 
@@ -364,12 +546,14 @@ A version one graph must satisfy at least the following:
 - all connected ports are type-compatible
 - all node ids are stable and unique within the function
 - all required execution paths are structurally valid
+- actor-function constraints are valid
+- `else` port connections target instructions that expose `else`
 - equilibrium cycles where every pending node depends on another pending node are
   rejected as invalid
 
 Additional validation may be added by implementation.
 
-## 12. Version One Implementation Notes
+## 16. Version One Implementation Notes
 
 The following are intentionally left open for implementation:
 
@@ -378,6 +562,8 @@ The following are intentionally left open for implementation:
 - exact internal representation of missing versus empty versus present states
 - exact seed derivation algorithm
 - exact virtual mesh materialization strategy
+- exact actor id derivation strategy
+- exact cache key encoding
 
 These are not open behavioral questions. They are implementation choices that
 must preserve the semantics defined in this document.

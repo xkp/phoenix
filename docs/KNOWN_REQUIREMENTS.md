@@ -136,6 +136,9 @@ can be made with the full context available.
   actor-generating functions create child actors.
 - Actor hierarchy construction is function-driven rather than assembled by
   generic graph instructions.
+- Every function invocation belongs to exactly one actor context.
+- Non-actor-generating functions belong to the current actor of their caller.
+- Actor-generating functions create a new actor context for their own execution.
 - Every actor has a pivot point.
 - The pivot belongs to the actor, not the geometry, although it may be derived
   from the input geometry.

@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(CGAL REQUIRED)
 
 add_executable(phoenix_cgal_app
+    src/execution.cpp
     src/graph.cpp
     src/graph_validation.cpp
     src/main.cpp
@@ -63,4 +64,23 @@ if(MSVC)
     target_compile_options(phoenix_value_tests PRIVATE /W4 /permissive-)
 else()
     target_compile_options(phoenix_value_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_execution_tests
+    src/execution.cpp
+    src/graph.cpp
+    src/randomness.cpp
+    src/values.cpp
+    tests/execution_tests.cpp
+)
+
+target_include_directories(phoenix_execution_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_execution_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_execution_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
