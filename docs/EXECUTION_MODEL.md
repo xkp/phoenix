@@ -419,6 +419,11 @@ function belongs to the current actor of its caller. An actor-generating nested
 function creates a new child actor and belongs to that new actor for the duration
 of its execution.
 
+Actor ids are derived deterministically from function call paths in the current
+runtime slice. The top-level actor uses the root call path, and child
+actor-generating function calls derive child actor ids from their caller node and
+callee function id.
+
 ### 11.2 Actor-Generating Functions
 
 Some functions are marked as actor-generating functions.
@@ -444,6 +449,9 @@ function belongs to the child actor created by that function.
 
 Geometry produced outside the child actor function continues to accumulate into
 the current parent actor.
+
+The concrete runtime representation for actor-local geometry accumulation is
+deferred until the geometry payload model is settled.
 
 ### 11.4 Actor Contents
 

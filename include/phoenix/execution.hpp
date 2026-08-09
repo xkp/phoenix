@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phoenix/actors.hpp"
 #include "phoenix/common.hpp"
 #include "phoenix/graph.hpp"
 #include "phoenix/randomness.hpp"
@@ -130,6 +131,7 @@ struct FunctionExecutionResult {
     FunctionExecutionStatus status = FunctionExecutionStatus::completed;
     std::vector<PortValue> outputs;
     std::vector<NodeRuntimeState> node_states;
+    std::optional<ActorNode> actor;
     std::vector<InstructionFailure> failures;
     std::optional<std::string> failure_message;
 };

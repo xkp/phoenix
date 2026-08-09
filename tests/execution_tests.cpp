@@ -1269,6 +1269,240 @@ bool test_multiplex_seed_modes_derive_item_seeds()
         && per_item_a != per_item_effective;
 }
 
+bool test_top_level_execution_creates_root_actor()
+{
+    FunctionDescriptor function;
+    function.id = "root-actor";
+    function.instructions = {
+        make_instruction(
+            1,
+            "root_geometry",
+            {},
+            {make_output_port("output", "geometry")}),
+    };
+
+    std::optional<phoenix::ActorId> frame_actor_id;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "root_geometry",
+        [&frame_actor_id](const phoenix::InstructionExecutionFrame& frame) {
+            const auto* current = frame.call_stack.current();
+            if (current != nullptr) {
+                frame_actor_id = current->actor_id;
+            }
+
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("root-geometry")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+    request.context.function_id = function.id;
+    request.context.call_path = {"root"};
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && result.actor.has_value()
+        && result.actor->id == "actor:root"
+        && frame_actor_id.has_value()
+        && *frame_actor_id == result.actor->id
+        && result.actor->children.empty()
+        && !result.actor->geometry.has_value();
+}
+
+bool test_non_actor_nested_function_inherits_actor_context()
+{
+    FunctionDescriptor child;
+    child.id = "child";
+    child.instructions = {
+        make_instruction(
+            7,
+            "child_geometry",
+            {},
+            {make_output_port("output", "geometry")}),
+    };
+
+    FunctionDescriptor parent;
+    parent.id = "parent";
+    auto call_child = make_instruction(
+        2,
+        "call",
+        {},
+        {make_output_port("output", "geometry")});
+    call_child.called_function_id = child.id;
+    parent.instructions = {
+        make_instruction(
+            1,
+            "parent_before",
+            {},
+            {make_output_port("output", "geometry")}),
+        call_child,
+        make_instruction(
+            3,
+            "parent_after",
+            {},
+            {make_output_port("output", "geometry")}),
+    };
+
+    std::optional<phoenix::ActorId> child_actor_id;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "parent_before",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("parent-before")}},
+                std::nullopt,
+            };
+        });
+    registry.register_handler(
+        "child_geometry",
+        [&child_actor_id](const phoenix::InstructionExecutionFrame& frame) {
+            const auto* current = frame.call_stack.current();
+            if (current != nullptr) {
+                child_actor_id = current->actor_id;
+            }
+
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("child-geometry")}},
+                std::nullopt,
+            };
+        });
+    registry.register_handler(
+        "parent_after",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("parent-after")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionLibrary functions;
+    functions.register_function(parent);
+    functions.register_function(child);
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &parent;
+    request.context.function_id = parent.id;
+    request.context.call_path = {"root"};
+
+    const phoenix::FunctionExecutor executor(registry, functions);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && result.actor.has_value()
+        && result.actor->id == "actor:root"
+        && child_actor_id.has_value()
+        && *child_actor_id == result.actor->id
+        && result.actor->children.empty()
+        && !result.actor->geometry.has_value();
+}
+
+bool test_actor_generating_nested_function_creates_child_actor()
+{
+    FunctionDescriptor child;
+    child.id = "actor-child";
+    child.generates_actor = true;
+    auto child_geometry = make_instruction(
+        7,
+        "child_actor_geometry",
+        {},
+        {make_output_port("output", "geometry")});
+    child_geometry.generates_actor = true;
+    child.instructions = {child_geometry};
+
+    FunctionDescriptor parent;
+    parent.id = "actor-parent";
+    auto call_child = make_instruction(
+        2,
+        "call",
+        {},
+        {make_output_port("output", "geometry")});
+    call_child.called_function_id = child.id;
+    parent.instructions = {
+        make_instruction(
+            1,
+            "parent_before_actor_child",
+            {},
+            {make_output_port("output", "geometry")}),
+        call_child,
+        make_instruction(
+            3,
+            "parent_after_actor_child",
+            {},
+            {make_output_port("output", "geometry")}),
+    };
+
+    std::optional<phoenix::ActorId> child_actor_id;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "parent_before_actor_child",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("parent-before")}},
+                std::nullopt,
+            };
+        });
+    registry.register_handler(
+        "child_actor_geometry",
+        [&child_actor_id](const phoenix::InstructionExecutionFrame& frame) {
+            const auto* current = frame.call_stack.current();
+            if (current != nullptr) {
+                child_actor_id = current->actor_id;
+            }
+
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("child-actor-geometry")}},
+                std::nullopt,
+            };
+        });
+    registry.register_handler(
+        "parent_after_actor_child",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("parent-after")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionLibrary functions;
+    functions.register_function(parent);
+    functions.register_function(child);
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &parent;
+    request.context.function_id = parent.id;
+    request.context.call_path = {"root"};
+
+    const phoenix::FunctionExecutor executor(registry, functions);
+    const auto first = executor.run(request);
+    const auto second = executor.run(request);
+
+    return first.status == phoenix::FunctionExecutionStatus::completed
+        && second.status == phoenix::FunctionExecutionStatus::completed
+        && first.actor.has_value()
+        && second.actor.has_value()
+        && first.actor->id == "actor:root"
+        && first.actor->children.size() == 1
+        && second.actor->children.size() == 1
+        && child_actor_id.has_value()
+        && *child_actor_id == first.actor->children.front().id
+        && first.actor->children.front().id == second.actor->children.front().id
+        && first.actor->children.front().id == "actor:root:2:actor-child"
+        && !first.actor->geometry.has_value()
+        && !first.actor->children.front().geometry.has_value();
+}
+
 bool run_test(const char* name, bool (*test_fn)())
 {
     const bool passed = test_fn();
@@ -1301,6 +1535,9 @@ int main()
     ok = run_test("effective seed is deterministic", test_effective_seed_is_deterministic) && ok;
     ok = run_test("effective seed changes with stable identity inputs", test_effective_seed_changes_with_stable_identity_inputs) && ok;
     ok = run_test("multiplex seed modes derive item seeds", test_multiplex_seed_modes_derive_item_seeds) && ok;
+    ok = run_test("top-level execution creates root actor", test_top_level_execution_creates_root_actor) && ok;
+    ok = run_test("non-actor nested function inherits actor context", test_non_actor_nested_function_inherits_actor_context) && ok;
+    ok = run_test("actor-generating nested function creates child actor", test_actor_generating_nested_function_creates_child_actor) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

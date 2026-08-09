@@ -460,6 +460,25 @@ std::vector<PortValue> collect_outputs(
     return outputs;
 }
 
+std::string actor_id_from_call_path(const FunctionCallPath& call_path)
+{
+    if (call_path.empty()) {
+        return "actor:root";
+    }
+
+    std::ostringstream stream;
+    stream << "actor";
+    for (const auto& segment : call_path) {
+        stream << ':' << segment;
+    }
+    return stream.str();
+}
+
+void merge_child_actors(ActorNode& target, const ActorNode& source)
+{
+    target.children.insert(target.children.end(), source.children.begin(), source.children.end());
+}
+
 std::vector<NodeRuntimeState> ordered_states(const FunctionDescriptor& function, const RuntimeStateMap& states)
 {
     std::vector<NodeRuntimeState> ordered;
@@ -669,12 +688,20 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
 
     const auto function_inputs = make_input_lookup(request.inputs);
     CallStack call_stack = request.call_stack;
+    const bool top_level_invocation = call_stack.empty();
+    const ActorId current_actor_id = top_level_invocation
+        ? actor_id_from_call_path(request.context.call_path)
+        : call_stack.current()->actor_id.value_or(actor_id_from_call_path(request.context.call_path));
+
+    ActorNode actor;
+    actor.id = current_actor_id;
+
     if (call_stack.empty()) {
         call_stack.push(CallFrame{
             function.id,
             request.context.call_path,
             std::nullopt,
-            std::nullopt,
+            current_actor_id,
         });
     }
 
@@ -787,12 +814,15 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                 request.context,
                 instruction->id,
                 *instruction->called_function_id);
+            const ActorId child_actor_id = child_function->generates_actor
+                ? actor_id_from_call_path(path)
+                : current_actor_id;
             CallStack child_stack = call_stack;
             child_stack.push(CallFrame{
                 *instruction->called_function_id,
                 path,
                 instruction->id,
-                call_stack.current() == nullptr ? std::nullopt : call_stack.current()->actor_id,
+                child_actor_id,
             });
 
             FunctionExecutionRequest child_request;
@@ -804,6 +834,14 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
             child_request.call_stack = child_stack;
 
             const auto child_result = run(child_request);
+            if (child_result.actor.has_value()) {
+                if (child_function->generates_actor) {
+                    actor.children.push_back(*child_result.actor);
+                } else {
+                    merge_child_actors(actor, *child_result.actor);
+                }
+            }
+
             if (child_result.status != FunctionExecutionStatus::completed) {
                 instruction_result.node_id = node_id;
                 instruction_result.produced_outputs =
@@ -862,6 +900,7 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
 
     execution_result.outputs = collect_outputs(function, states);
     execution_result.node_states = ordered_states(function, states);
+    execution_result.actor = actor;
     return execution_result;
 }
 

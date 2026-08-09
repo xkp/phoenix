@@ -7,32 +7,26 @@
 
 int main()
 {
-    const phoenix::FunctionDescriptor function{
-        "smoke_test_function",
-        {
-            {"input", "geometry", phoenix::PortDirection::input},
-        },
-        {
-            {"result", "geometry", phoenix::PortDirection::output},
-        },
-        {
-            {
-                1,
-                "sample_instruction",
-                {{"input", "geometry", phoenix::PortDirection::input}},
-                {
-                    {"output", "geometry", phoenix::PortDirection::output},
-                    {"else", "geometry", phoenix::PortDirection::output},
-                },
-                false,
-                false,
-                true,
-                std::nullopt,
-            },
-        },
-        {},
-        false,
+    phoenix::InstructionDescriptor sample_instruction;
+    sample_instruction.id = 1;
+    sample_instruction.kind = "sample_instruction";
+    sample_instruction.input_ports = {
+        {"input", "geometry", phoenix::PortDirection::input},
     };
+    sample_instruction.output_ports = {
+        {"output", "geometry", phoenix::PortDirection::output},
+        {"else", "geometry", phoenix::PortDirection::output},
+    };
+
+    phoenix::FunctionDescriptor function;
+    function.id = "smoke_test_function";
+    function.input_ports = {
+        {"input", "geometry", phoenix::PortDirection::input},
+    };
+    function.output_ports = {
+        {"result", "geometry", phoenix::PortDirection::output},
+    };
+    function.instructions = {sample_instruction};
 
     const phoenix::GraphIndex index(function);
     const auto* instruction = index.find_instruction(1);

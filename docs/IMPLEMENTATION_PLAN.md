@@ -313,6 +313,23 @@ Deliverables:
 - actor hierarchy runtime
 - actor assembly tests
 
+Current status:
+
+- implementation started with actor context on every function invocation
+- top-level execution creates a deterministic root actor
+- non-actor nested functions inherit the caller's current actor
+- actor-generating nested functions create deterministic child actors
+
+Remaining Phase 7 work:
+
+- implement concrete transform and pivot behavior
+- define actor-local geometry payload and accumulation rules after geometry
+  representation is settled
+- define actor naming policy
+- extend actor generation for multiplexed actor-generating functions
+- refine actor id policy for later partial-rerun retention
+- decide how actor outputs interact with parent-side graph dependencies
+
 ## Phase 8: Implement Instancing
 
 Goal:

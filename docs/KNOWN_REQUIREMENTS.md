@@ -155,6 +155,7 @@ can be made with the full context available.
 - Every function invocation belongs to exactly one actor context.
 - Non-actor-generating functions belong to the current actor of their caller.
 - Actor-generating functions create a new actor context for their own execution.
+- Actor ids are deterministic for identical graph structure and call paths.
 - Every actor has a pivot point.
 - The pivot belongs to the actor, not the geometry, although it may be derived
   from the input geometry.
@@ -172,6 +173,8 @@ can be made with the full context available.
 - Non-actor-generating functions may still produce geometry.
 - Geometry produced outside a child actor function still accumulates into the
   current actor geometry.
+- The concrete actor-local geometry payload representation is deferred until
+  the geometry model is settled.
 - Actor hierarchy is purely structural in version one.
 - Actors may or may not have names.
 - Every actor has an id.
