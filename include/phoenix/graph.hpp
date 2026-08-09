@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phoenix/common.hpp"
+#include "phoenix/randomness.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -37,6 +38,7 @@ struct InstructionDescriptor {
     bool multiplexes_input = false;
     bool has_else_port = true;
     bool failure_is_critical = false;
+    MultiplexSeedMode multiplex_seed_mode = MultiplexSeedMode::one_seed_for_all;
     std::optional<SeedValue> local_seed;
     std::optional<FunctionId> called_function_id;
 };

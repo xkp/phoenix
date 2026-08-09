@@ -1137,6 +1137,138 @@ bool test_effective_seed_is_deterministic()
         && first_seed == second_seed;
 }
 
+std::optional<phoenix::SeedValue> run_seed_probe(
+    phoenix::NodeId node_id,
+    std::optional<phoenix::SeedValue> local_seed,
+    phoenix::FunctionCallPath call_path)
+{
+    FunctionDescriptor function;
+    function.id = "seed-probe";
+    auto instruction = make_instruction(
+        node_id,
+        "seed_probe",
+        {},
+        {make_output_port("output", "int")});
+    instruction.local_seed = local_seed;
+    function.instructions = {instruction};
+
+    std::optional<phoenix::SeedValue> captured_seed;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "seed_probe",
+        [&captured_seed](const phoenix::InstructionExecutionFrame& frame) {
+            captured_seed = frame.effective_seed;
+            return phoenix::InstructionResult{frame.inputs.node_id, {}, std::nullopt};
+        });
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+    request.context.function_id = function.id;
+    request.context.call_path = std::move(call_path);
+    request.context.global_seed = 42;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+    if (result.status != phoenix::FunctionExecutionStatus::completed) {
+        return std::nullopt;
+    }
+
+    return captured_seed;
+}
+
+bool test_effective_seed_changes_with_stable_identity_inputs()
+{
+    const auto base = run_seed_probe(7, std::nullopt, {"root", "seed-probe"});
+    const auto repeat = run_seed_probe(7, std::nullopt, {"root", "seed-probe"});
+    const auto different_node = run_seed_probe(8, std::nullopt, {"root", "seed-probe"});
+    const auto different_path = run_seed_probe(7, std::nullopt, {"root", "other-call"});
+    const auto local_seed = run_seed_probe(7, phoenix::SeedValue{5}, {"root", "seed-probe"});
+
+    return base.has_value()
+        && repeat.has_value()
+        && different_node.has_value()
+        && different_path.has_value()
+        && local_seed.has_value()
+        && base == repeat
+        && base != different_node
+        && base != different_path
+        && base != local_seed;
+}
+
+bool test_multiplex_seed_modes_derive_item_seeds()
+{
+    FunctionDescriptor function;
+    function.id = "item-seed-probe";
+    auto shared_instruction = make_instruction(
+        1,
+        "shared_item_seed",
+        {},
+        {make_output_port("output", "int")});
+    shared_instruction.multiplexes_input = true;
+    shared_instruction.multiplex_seed_mode = phoenix::MultiplexSeedMode::one_seed_for_all;
+
+    auto per_item_instruction = make_instruction(
+        2,
+        "per_item_seed",
+        {},
+        {make_output_port("output", "int")});
+    per_item_instruction.multiplexes_input = true;
+    per_item_instruction.multiplex_seed_mode = phoenix::MultiplexSeedMode::one_seed_each;
+
+    function.instructions = {shared_instruction, per_item_instruction};
+
+    std::optional<phoenix::SeedValue> shared_effective;
+    std::optional<phoenix::SeedValue> shared_item_a;
+    std::optional<phoenix::SeedValue> shared_item_b;
+    std::optional<phoenix::SeedValue> per_item_effective;
+    std::optional<phoenix::SeedValue> per_item_a;
+    std::optional<phoenix::SeedValue> per_item_a_repeat;
+    std::optional<phoenix::SeedValue> per_item_b;
+
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "shared_item_seed",
+        [&shared_effective, &shared_item_a, &shared_item_b](const phoenix::InstructionExecutionFrame& frame) {
+            shared_effective = frame.effective_seed;
+            shared_item_a = frame.derive_item_seed(1);
+            shared_item_b = frame.derive_item_seed(2);
+            return phoenix::InstructionResult{frame.inputs.node_id, {}, std::nullopt};
+        });
+    registry.register_handler(
+        "per_item_seed",
+        [&per_item_effective, &per_item_a, &per_item_a_repeat, &per_item_b](
+            const phoenix::InstructionExecutionFrame& frame) {
+            per_item_effective = frame.effective_seed;
+            per_item_a = frame.derive_item_seed(1);
+            per_item_a_repeat = frame.derive_item_seed(1);
+            per_item_b = frame.derive_item_seed(2);
+            return phoenix::InstructionResult{frame.inputs.node_id, {}, std::nullopt};
+        });
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+    request.context.function_id = function.id;
+    request.context.call_path = {"root", "item-seed-probe"};
+    request.context.global_seed = 42;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && shared_effective.has_value()
+        && shared_item_a.has_value()
+        && shared_item_b.has_value()
+        && per_item_effective.has_value()
+        && per_item_a.has_value()
+        && per_item_a_repeat.has_value()
+        && per_item_b.has_value()
+        && shared_item_a == shared_effective
+        && shared_item_b == shared_effective
+        && per_item_a == per_item_a_repeat
+        && per_item_a != per_item_b
+        && per_item_a != per_item_effective;
+}
+
 bool run_test(const char* name, bool (*test_fn)())
 {
     const bool passed = test_fn();
@@ -1167,6 +1299,8 @@ int main()
     ok = run_test("multiplexed successes and failures accumulate", test_multiplexed_successes_and_failures_accumulate) && ok;
     ok = run_test("nested function failure can be handled by call else", test_nested_function_failure_can_be_handled_by_call_else) && ok;
     ok = run_test("effective seed is deterministic", test_effective_seed_is_deterministic) && ok;
+    ok = run_test("effective seed changes with stable identity inputs", test_effective_seed_changes_with_stable_identity_inputs) && ok;
+    ok = run_test("multiplex seed modes derive item seeds", test_multiplex_seed_modes_derive_item_seeds) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

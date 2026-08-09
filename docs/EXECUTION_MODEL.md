@@ -385,6 +385,10 @@ stable item index or another stable item identity derived from the input value.
 This ensures that multiplexed execution can still recreate the same per-item
 random streams on every run.
 
+The execution frame exposes the effective instruction seed and a per-item seed
+derivation helper. Instruction implementations should ask the frame for item
+seeds rather than deriving them ad hoc.
+
 ### 10.4 Local Seeds
 
 An instruction may also have its own local seed configuration.

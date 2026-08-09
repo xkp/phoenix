@@ -617,6 +617,24 @@ const FunctionDescriptor* FunctionLibrary::find_function(const FunctionId& id) c
     return it->second;
 }
 
+SeedValue InstructionExecutionFrame::derive_item_seed(std::uint64_t item_key) const noexcept
+{
+    if (multiplex_seed_mode == MultiplexSeedMode::one_seed_for_all) {
+        if (effective_seed.has_value()) {
+            return *effective_seed;
+        }
+
+        const SeedDeriver deriver;
+        return deriver.derive(seed_derivation);
+    }
+
+    SeedDerivationInput item_seed_input = seed_derivation;
+    item_seed_input.item_key = item_key;
+
+    const SeedDeriver deriver;
+    return deriver.derive(item_seed_input);
+}
+
 FunctionExecutor::FunctionExecutor(const InstructionRegistry& registry)
     : registry_(&registry)
 {
@@ -740,7 +758,9 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
         frame.context = request.context;
         frame.call_stack = call_stack;
         frame.inputs = make_instruction_inputs(state, request.input_defaults, force_running);
+        frame.seed_derivation = seed_input;
         frame.effective_seed = seed_deriver_.derive(seed_input);
+        frame.multiplex_seed_mode = instruction->multiplex_seed_mode;
 
         InstructionResult instruction_result;
         if (instruction->called_function_id.has_value()) {

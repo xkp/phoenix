@@ -129,6 +129,8 @@ can be made with the full context available.
   - one seed for all
   - one seed each
 - In `one seed each`, per-item randomness must also be reproducible.
+- Instruction implementations should receive seed values from the runtime
+  rather than deriving ad hoc random seeds internally.
 
 ### Multiplexing
 

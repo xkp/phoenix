@@ -236,7 +236,7 @@ Deliverables:
 
 Current status:
 
-- completed for the first deterministic executor slice
+- completed for the deterministic executor slice
 - structured instruction failure records support multiple failure records from
   one instruction execution
 - item-scoped multiplex failures preserve stable item keys
@@ -272,6 +272,23 @@ Deliverables:
 - seed derivation utilities
 - RNG integration rules
 - reproducibility tests
+
+Current status:
+
+- implementation started with deterministic instruction seed derivation
+- instruction seed derivation includes global seed, function call path, node id,
+  and local seed
+- instruction descriptors can select multiplex seed mode:
+  - one seed for all
+  - one seed each
+- execution frames expose per-item seed derivation for multiplex handlers
+- per-item seed derivation includes the item key only in `one seed each` mode
+
+Remaining Phase 6 work:
+
+- define the concrete RNG engine construction policy used by instruction
+  implementations
+- add direct RNG sequence reproducibility tests once handlers start consuming RNG
 
 ## Phase 7: Implement Actor Generation
 
