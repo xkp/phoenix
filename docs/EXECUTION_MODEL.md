@@ -493,6 +493,12 @@ Instancing is an optimization. It may skip rerunning an actor-generating graph
 only when the effective generation inputs are known to be equivalent, including
 topology-relevant geometry identity once geometry keys are available.
 
+The initial runtime slice uses explicit instance keys only. A multiplexed
+actor-generating call may opt into instancing, and when multiple items provide
+the same explicit key, the first item is generated normally and later matching
+items become separate actors that reference the same prototype. If no explicit
+key exists, no instancing occurs.
+
 Rules:
 
 - an actor may be generated once as a reusable prototype

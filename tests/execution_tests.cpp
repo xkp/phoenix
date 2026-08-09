@@ -1713,6 +1713,174 @@ bool test_multiplexed_actor_generation_routes_failed_item_without_actor()
         && output_has_geometry_label(result, "fallback", "fallback-for-face-b");
 }
 
+bool test_instancing_reuses_actor_generation_for_matching_explicit_keys()
+{
+    FunctionDescriptor child;
+    child.id = "instanced-actor-item";
+    child.input_ports = {
+        make_input_port("input", "geometry"),
+        make_input_port("instance_key", "string"),
+    };
+    child.generates_actor = true;
+    auto child_capture = make_instruction(
+        7,
+        "capture_instanced_actor_item",
+        {make_input_port("input", "geometry"), make_input_port("instance_key", "string")},
+        {make_output_port("output", "geometry")});
+    child_capture.generates_actor = true;
+    child.instructions = {child_capture};
+
+    FunctionDescriptor parent;
+    parent.id = "instanced-actor-parent";
+    parent.input_ports = {
+        make_input_port("input", "geometry"),
+        make_input_port("instance_key", "string"),
+    };
+    auto call_child = make_instruction(
+        2,
+        "call",
+        {make_input_port("input", "geometry"), make_input_port("instance_key", "string")},
+        {make_output_port("output", "geometry")});
+    call_child.called_function_id = child.id;
+    call_child.multiplexes_input = true;
+    call_child.enables_instancing = true;
+    parent.instructions = {call_child};
+
+    int child_run_count = 0;
+    std::vector<std::string> captured_input_labels;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "capture_instanced_actor_item",
+        [&child_run_count, &captured_input_labels](const phoenix::InstructionExecutionFrame& frame) {
+            ++child_run_count;
+            const auto* input = find_input(frame, "input");
+            const auto* geometry = input == nullptr ? nullptr : input->as_geometry();
+            if (geometry != nullptr) {
+                captured_input_labels.push_back(geometry->debug_label);
+            }
+
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("ignored")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionLibrary functions;
+    functions.register_function(parent);
+    functions.register_function(child);
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &parent;
+    request.inputs = {
+        phoenix::PortValue{"input", phoenix::RuntimeValue::geometry_collection({
+            phoenix::GeometryValue{"face-a"},
+            phoenix::GeometryValue{"face-b"},
+            phoenix::GeometryValue{"face-c"},
+        })},
+        phoenix::PortValue{"instance_key", phoenix::RuntimeValue::literal(phoenix::LiteralValue{
+            phoenix::LiteralArray{
+                phoenix::LiteralScalar{std::string{"same-topology"}},
+                phoenix::LiteralScalar{std::string{"different-topology"}},
+                phoenix::LiteralScalar{std::string{"same-topology"}},
+            },
+        })},
+    };
+    request.context.function_id = parent.id;
+    request.context.call_path = {"root"};
+
+    const phoenix::FunctionExecutor executor(registry, functions);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && result.actor.has_value()
+        && result.actor->children.size() == 3
+        && child_run_count == 2
+        && captured_input_labels.size() == 2
+        && captured_input_labels[0] == "face-a"
+        && captured_input_labels[1] == "face-b"
+        && result.actor->children[0].id == "actor:root:2:instanced-actor-item:item:0"
+        && result.actor->children[1].id == "actor:root:2:instanced-actor-item:item:1"
+        && result.actor->children[2].id == "actor:root:2:instanced-actor-item:item:2"
+        && result.actor->children[0].prototype.has_value()
+        && result.actor->children[1].prototype.has_value()
+        && result.actor->children[2].prototype.has_value()
+        && result.actor->children[0].prototype->prototype_id
+            == "prototype:instanced-actor-item:same-topology"
+        && result.actor->children[1].prototype->prototype_id
+            == "prototype:instanced-actor-item:different-topology"
+        && result.actor->children[2].prototype->prototype_id
+            == result.actor->children[0].prototype->prototype_id;
+}
+
+bool test_instancing_does_not_reuse_without_explicit_keys()
+{
+    FunctionDescriptor child;
+    child.id = "unkeyed-instanced-actor-item";
+    child.input_ports = {make_input_port("input", "geometry")};
+    child.generates_actor = true;
+    auto child_capture = make_instruction(
+        7,
+        "capture_unkeyed_instanced_actor_item",
+        {make_input_port("input", "geometry")},
+        {make_output_port("output", "geometry")});
+    child_capture.generates_actor = true;
+    child.instructions = {child_capture};
+
+    FunctionDescriptor parent;
+    parent.id = "unkeyed-instanced-actor-parent";
+    parent.input_ports = {make_input_port("input", "geometry")};
+    auto call_child = make_instruction(
+        2,
+        "call",
+        {make_input_port("input", "geometry")},
+        {make_output_port("output", "geometry")});
+    call_child.called_function_id = child.id;
+    call_child.multiplexes_input = true;
+    call_child.enables_instancing = true;
+    parent.instructions = {call_child};
+
+    int child_run_count = 0;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "capture_unkeyed_instanced_actor_item",
+        [&child_run_count](const phoenix::InstructionExecutionFrame& frame) {
+            ++child_run_count;
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("ignored")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionLibrary functions;
+    functions.register_function(parent);
+    functions.register_function(child);
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &parent;
+    request.inputs = {
+        phoenix::PortValue{"input", phoenix::RuntimeValue::geometry_collection({
+            phoenix::GeometryValue{"face-a"},
+            phoenix::GeometryValue{"face-b"},
+            phoenix::GeometryValue{"face-c"},
+        })},
+    };
+    request.context.function_id = parent.id;
+    request.context.call_path = {"root"};
+
+    const phoenix::FunctionExecutor executor(registry, functions);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && result.actor.has_value()
+        && result.actor->children.size() == 3
+        && child_run_count == 3
+        && !result.actor->children[0].prototype.has_value()
+        && !result.actor->children[1].prototype.has_value()
+        && !result.actor->children[2].prototype.has_value();
+}
+
 bool run_test(const char* name, bool (*test_fn)())
 {
     const bool passed = test_fn();
@@ -1750,6 +1918,8 @@ int main()
     ok = run_test("actor-generating nested function creates child actor", test_actor_generating_nested_function_creates_child_actor) && ok;
     ok = run_test("multiplexed actor-generating call creates child actor per item", test_multiplexed_actor_generating_call_creates_child_actor_per_item) && ok;
     ok = run_test("multiplexed actor generation routes failed item without actor", test_multiplexed_actor_generation_routes_failed_item_without_actor) && ok;
+    ok = run_test("instancing reuses actor generation for matching explicit keys", test_instancing_reuses_actor_generation_for_matching_explicit_keys) && ok;
+    ok = run_test("instancing does not reuse without explicit keys", test_instancing_does_not_reuse_without_explicit_keys) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

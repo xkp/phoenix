@@ -356,6 +356,26 @@ Deliverables:
 - instance placement mechanism
 - repeated-structure tests such as building/window scenarios
 
+Current status:
+
+- implementation started with an explicit-key instancing slice
+- actor-generating call instructions can opt into instancing
+- multiplexed actor calls may split an `instance_key` literal array alongside
+  the special `input`
+- matching explicit `instance_key` values reuse the first generated prototype
+  reference and skip rerunning the child graph
+- actor hierarchy still contains one child actor per input item
+- items without an explicit key are never instanced
+
+Remaining Phase 8 work:
+
+- replace the temporary local prototype table with cache-backed prototype
+  storage
+- define topology-aware geometry identity inputs for prototype keys
+- implement transform/placement data for instances
+- define how prototype contents are stored and inspected
+- prove instanced execution remains equivalent to full per-item execution
+
 ## Phase 9: Implement Partial Runs And Invalidation
 
 Goal:

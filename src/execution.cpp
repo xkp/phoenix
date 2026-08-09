@@ -326,9 +326,75 @@ FunctionCallPath item_call_path(FunctionCallPath path, std::uint64_t item_key)
 
 struct ChildInvocation {
     std::optional<std::uint64_t> item_key;
+    std::optional<std::string> instance_key;
     FunctionCallPath call_path;
     std::vector<PortValue> inputs;
 };
+
+std::optional<std::string> scalar_instance_key(const LiteralScalar& scalar)
+{
+    if (const auto* integer = std::get_if<std::int64_t>(&scalar)) {
+        return std::to_string(*integer);
+    }
+    if (const auto* floating_point = std::get_if<double>(&scalar)) {
+        std::ostringstream stream;
+        stream << *floating_point;
+        return stream.str();
+    }
+    if (const auto* boolean = std::get_if<bool>(&scalar)) {
+        return *boolean ? "true" : "false";
+    }
+    if (const auto* text = std::get_if<std::string>(&scalar)) {
+        return *text;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::string> instance_key_from_value(const RuntimeValue& value)
+{
+    const auto* literal = value.as_literal();
+    if (literal == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto scalar = literal_first_scalar(*literal);
+    if (!scalar.has_value()) {
+        return std::nullopt;
+    }
+
+    return scalar_instance_key(*scalar);
+}
+
+std::optional<RuntimeValue> literal_item_value(const RuntimeValue& value, std::size_t item_index)
+{
+    const auto* literal = value.as_literal();
+    if (literal == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto* array = std::get_if<LiteralArray>(literal);
+    if (array == nullptr || item_index >= array->size()) {
+        return std::nullopt;
+    }
+
+    return RuntimeValue::literal(LiteralValue{(*array)[item_index]});
+}
+
+std::optional<std::string> instance_key_from_inputs(const std::vector<PortValue>& inputs)
+{
+    const auto input_it = std::find_if(
+        inputs.begin(),
+        inputs.end(),
+        [](const PortValue& input) {
+            return input.port == "instance_key";
+        });
+    if (input_it == inputs.end()) {
+        return std::nullopt;
+    }
+
+    return instance_key_from_value(input_it->value);
+}
 
 std::vector<ChildInvocation> child_invocations_for(
     const InstructionDescriptor& instruction,
@@ -336,7 +402,12 @@ std::vector<ChildInvocation> child_invocations_for(
     const std::vector<PortValue>& inputs)
 {
     if (!instruction.multiplexes_input) {
-        return {ChildInvocation{std::nullopt, base_call_path, inputs}};
+        return {ChildInvocation{
+            std::nullopt,
+            instance_key_from_inputs(inputs),
+            base_call_path,
+            inputs,
+        }};
     }
 
     const auto input_it = std::find_if(
@@ -362,10 +433,23 @@ std::vector<ChildInvocation> child_invocations_for(
                     return input.port == "input";
                 });
             item_input->value = RuntimeValue::geometry(collection->contributions[i].debug_label);
+            auto instance_key_input = std::find_if(
+                item_inputs.begin(),
+                item_inputs.end(),
+                [](const PortValue& input) {
+                    return input.port == "instance_key";
+                });
+            if (instance_key_input != item_inputs.end()) {
+                const auto item_value = literal_item_value(instance_key_input->value, i);
+                if (item_value.has_value()) {
+                    instance_key_input->value = *item_value;
+                }
+            }
 
             const auto item_key = static_cast<std::uint64_t>(i);
             invocations.push_back(ChildInvocation{
                 item_key,
+                instance_key_from_inputs(item_inputs),
                 item_call_path(base_call_path, item_key),
                 std::move(item_inputs),
             });
@@ -374,7 +458,12 @@ std::vector<ChildInvocation> child_invocations_for(
         return invocations;
     }
 
-    return {ChildInvocation{std::uint64_t{0}, item_call_path(base_call_path, 0), inputs}};
+    return {ChildInvocation{
+        std::uint64_t{0},
+        instance_key_from_inputs(inputs),
+        item_call_path(base_call_path, 0),
+        inputs,
+    }};
 }
 
 std::vector<PortValue> outputs_as_instruction_outputs(
@@ -532,6 +621,15 @@ std::string actor_id_from_call_path(const FunctionCallPath& call_path)
     for (const auto& segment : call_path) {
         stream << ':' << segment;
     }
+    return stream.str();
+}
+
+std::string prototype_id_for(
+    const FunctionId& function_id,
+    const std::string& instance_key)
+{
+    std::ostringstream stream;
+    stream << "prototype:" << function_id << ':' << instance_key;
     return stream.str();
 }
 
@@ -881,10 +979,25 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                 frame.inputs.promised_inputs);
 
             instruction_result.node_id = node_id;
+            std::unordered_map<std::string, ActorPrototypeRef> prototypes_by_instance_key;
             for (const auto& child_invocation : child_invocations) {
                 const ActorId child_actor_id = child_function->generates_actor
                     ? actor_id_from_call_path(child_invocation.call_path)
                     : current_actor_id;
+                const bool can_instance = instruction->enables_instancing
+                    && child_function->generates_actor
+                    && child_invocation.instance_key.has_value();
+                const auto prototype_it = can_instance
+                    ? prototypes_by_instance_key.find(*child_invocation.instance_key)
+                    : prototypes_by_instance_key.end();
+                if (can_instance && prototype_it != prototypes_by_instance_key.end()) {
+                    ActorNode instance_actor;
+                    instance_actor.id = child_actor_id;
+                    instance_actor.prototype = prototype_it->second;
+                    actor.children.push_back(std::move(instance_actor));
+                    continue;
+                }
+
                 CallStack child_stack = call_stack;
                 child_stack.push(CallFrame{
                     *instruction->called_function_id,
@@ -905,7 +1018,16 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                 if (child_result.status == FunctionExecutionStatus::completed
                     && child_result.actor.has_value()) {
                     if (child_function->generates_actor) {
-                        actor.children.push_back(*child_result.actor);
+                        auto child_actor = *child_result.actor;
+                        if (can_instance) {
+                            child_actor.prototype = ActorPrototypeRef{
+                                prototype_id_for(child_function->id, *child_invocation.instance_key),
+                            };
+                            prototypes_by_instance_key.emplace(
+                                *child_invocation.instance_key,
+                                *child_actor.prototype);
+                        }
+                        actor.children.push_back(std::move(child_actor));
                     } else {
                         merge_child_actors(actor, *child_result.actor);
                     }

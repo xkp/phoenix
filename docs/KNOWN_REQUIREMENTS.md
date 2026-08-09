@@ -192,6 +192,8 @@ can be made with the full context available.
   every repeated element.
 - Instancing can only reuse generation for effective inputs that are known to be
   geometrically/topologically equivalent.
+- Until topology-aware geometry identity is available, instancing must require
+  explicit equivalence keys.
 - A generated actor may act as a reusable prototype/definition.
 - Multiple instances may share the same underlying generated actor content.
 - Instance placement is separate from actor generation.
