@@ -55,6 +55,14 @@ RuntimeValue RuntimeValue::geometry(std::string debug_label)
     return value;
 }
 
+RuntimeValue RuntimeValue::geometry_collection(std::vector<GeometryValue> contributions)
+{
+    RuntimeValue value;
+    value.presence = ValuePresence::present;
+    value.payload = GeometryCollectionValue{std::move(contributions)};
+    return value;
+}
+
 RuntimeValue RuntimeValue::literal(LiteralValue literal_value)
 {
     RuntimeValue value;
@@ -96,6 +104,11 @@ bool RuntimeValue::is_geometry() const noexcept
     return std::holds_alternative<GeometryValue>(payload);
 }
 
+bool RuntimeValue::is_geometry_collection() const noexcept
+{
+    return std::holds_alternative<GeometryCollectionValue>(payload);
+}
+
 bool RuntimeValue::is_literal() const noexcept
 {
     return std::holds_alternative<LiteralValue>(payload);
@@ -104,6 +117,11 @@ bool RuntimeValue::is_literal() const noexcept
 const GeometryValue* RuntimeValue::as_geometry() const noexcept
 {
     return std::get_if<GeometryValue>(&payload);
+}
+
+const GeometryCollectionValue* RuntimeValue::as_geometry_collection() const noexcept
+{
+    return std::get_if<GeometryCollectionValue>(&payload);
 }
 
 const LiteralValue* RuntimeValue::as_literal() const noexcept

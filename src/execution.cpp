@@ -40,17 +40,56 @@ PortState* find_port_state(NodeRuntimeState& state, const PortId& port) noexcept
     return nullptr;
 }
 
+void append_geometry_contributions(
+    std::vector<GeometryValue>& contributions,
+    const RuntimeValue& value)
+{
+    if (const auto* geometry = value.as_geometry()) {
+        contributions.push_back(*geometry);
+        return;
+    }
+
+    if (const auto* collection = value.as_geometry_collection()) {
+        contributions.insert(
+            contributions.end(),
+            collection->contributions.begin(),
+            collection->contributions.end());
+    }
+}
+
+std::optional<RuntimeValue> merge_geometry_contributions(
+    const RuntimeValue& current,
+    const RuntimeValue& incoming)
+{
+    if ((!current.is_geometry() && !current.is_geometry_collection())
+        || (!incoming.is_geometry() && !incoming.is_geometry_collection())) {
+        return std::nullopt;
+    }
+
+    std::vector<GeometryValue> contributions;
+    append_geometry_contributions(contributions, current);
+    append_geometry_contributions(contributions, incoming);
+    return RuntimeValue::geometry_collection(std::move(contributions));
+}
+
 void receive_input(NodeRuntimeState& state, const PortId& port, const RuntimeValue& value)
 {
     if (value.is_missing()) {
         return;
     }
 
-    state.received_inputs[port] = value;
+    auto received = state.received_inputs.find(port);
+    if (received == state.received_inputs.end()) {
+        received = state.received_inputs.emplace(port, value).first;
+    } else if (auto merged = merge_geometry_contributions(received->second, value)) {
+        received->second = *merged;
+    } else {
+        received->second = value;
+    }
 
     auto* port_state = find_port_state(state, port);
     if (port_state != nullptr) {
-        port_state->value = value;
+        port_state->value = received->second;
     }
 }
 
@@ -298,6 +337,84 @@ std::vector<PortValue> outputs_as_instruction_outputs(
     return result.produced_outputs;
 }
 
+RuntimeValue failure_context_value(const InstructionFailure& failure)
+{
+    if (!failure.input_context.empty()) {
+        return failure.input_context.front().value;
+    }
+
+    return RuntimeValue::literal(LiteralValue{LiteralScalar{failure.message}});
+}
+
+bool has_else_route(const GraphIndex& index, NodeId node_id) noexcept
+{
+    for (const auto* edge : index.outgoing_edges(node_id)) {
+        if (edge->from_port == "else") {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void normalize_failures(InstructionResult& result, const InstructionExecutionFrame& frame)
+{
+    for (auto& failure : result.failures) {
+        if (failure.node_id == 0) {
+            failure.node_id = result.node_id;
+        }
+        if (failure.input_context.empty()) {
+            failure.input_context = frame.inputs.promised_inputs;
+        }
+        if (failure.call_stack.empty()) {
+            failure.call_stack = frame.call_stack;
+        }
+    }
+
+    if (result.failure_message.has_value()) {
+        result.failures.push_back(InstructionFailure{
+            result.node_id,
+            std::nullopt,
+            *result.failure_message,
+            frame.inputs.promised_inputs,
+            frame.call_stack,
+        });
+    }
+}
+
+std::vector<InstructionFailure> unhandled_failures(
+    const GraphIndex& index,
+    const InstructionDescriptor& instruction,
+    const InstructionResult& result)
+{
+    if (result.failures.empty()
+        || has_else_route(index, result.node_id)
+        || !instruction.failure_is_critical) {
+        return {};
+    }
+
+    return result.failures;
+}
+
+void emit_else_outputs_for_failures(
+    const GraphIndex& index,
+    const InstructionResult& result,
+    RuntimeStateMap& states)
+{
+    if (result.failures.empty() || !has_else_route(index, result.node_id)) {
+        return;
+    }
+
+    for (const auto& failure : result.failures) {
+        const PortValue else_output{"else", failure_context_value(failure)};
+        for (const auto* edge : index.outgoing_edges(result.node_id)) {
+            if (edge->from_port == "else") {
+                receive_input(states[edge->to_node], edge->to_port, else_output.value);
+            }
+        }
+    }
+}
+
 void propagate_outputs(
     const GraphIndex& index,
     const InstructionResult& result,
@@ -408,6 +525,24 @@ bool has_pending_node(const RuntimeStateMap& states)
     }
 
     return false;
+}
+
+std::string format_failure_summary(const std::vector<InstructionFailure>& failures)
+{
+    if (failures.empty()) {
+        return "Instruction failed.";
+    }
+
+    std::ostringstream stream;
+    stream << failures.size() << " unhandled failure";
+    if (failures.size() != 1) {
+        stream << 's';
+    }
+    stream << ". First failure at node '" << failures.front().node_id << "'";
+    if (!failures.front().message.empty()) {
+        stream << ": " << failures.front().message;
+    }
+    return stream.str();
 }
 
 } // namespace
@@ -650,15 +785,25 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
 
             const auto child_result = run(child_request);
             if (child_result.status != FunctionExecutionStatus::completed) {
-                state.state = InstructionState::completed;
-                execution_result.status = child_result.status;
-                execution_result.failure_message = child_result.failure_message;
-                break;
+                instruction_result.node_id = node_id;
+                instruction_result.produced_outputs =
+                    outputs_as_instruction_outputs(node_id, child_result.outputs);
+                instruction_result.failures = child_result.failures;
+                if (instruction_result.failures.empty()) {
+                    instruction_result.failures.push_back(InstructionFailure{
+                        node_id,
+                        std::nullopt,
+                        child_result.failure_message.value_or("Nested function call failed."),
+                        frame.inputs.promised_inputs,
+                        frame.call_stack,
+                    });
+                    instruction_result.failure_message = child_result.failure_message;
+                }
+            } else {
+                instruction_result.node_id = node_id;
+                instruction_result.produced_outputs =
+                    outputs_as_instruction_outputs(node_id, child_result.outputs);
             }
-
-            instruction_result.node_id = node_id;
-            instruction_result.produced_outputs =
-                outputs_as_instruction_outputs(node_id, child_result.outputs);
         } else {
             const auto* handler = registry_->find_handler(instruction->kind);
             if (handler == nullptr) {
@@ -673,16 +818,26 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
             instruction_result = (*handler)(frame);
         }
         instruction_result.node_id = node_id;
+        normalize_failures(instruction_result, frame);
 
         state.state = InstructionState::completed;
 
-        if (instruction_result.failure_message.has_value()) {
-            execution_result.status = FunctionExecutionStatus::failed;
-            execution_result.failure_message = instruction_result.failure_message;
-            break;
+        propagate_outputs(index, instruction_result, states);
+        emit_else_outputs_for_failures(index, instruction_result, states);
+
+        if (!instruction_result.failures.empty()) {
+            execution_result.failures.insert(
+                execution_result.failures.end(),
+                instruction_result.failures.begin(),
+                instruction_result.failures.end());
         }
 
-        propagate_outputs(index, instruction_result, states);
+        const auto unhandled = unhandled_failures(index, *instruction, instruction_result);
+        if (!unhandled.empty()) {
+            execution_result.status = FunctionExecutionStatus::failed;
+            execution_result.failure_message = format_failure_summary(unhandled);
+            break;
+        }
     }
 
     execution_result.outputs = collect_outputs(function, states);

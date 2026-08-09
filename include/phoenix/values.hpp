@@ -20,6 +20,10 @@ struct GeometryValue {
     std::string debug_label;
 };
 
+struct GeometryCollectionValue {
+    std::vector<GeometryValue> contributions;
+};
+
 using LiteralScalar = std::variant<std::int64_t, double, bool, std::string>;
 using LiteralArray = std::vector<LiteralScalar>;
 using LiteralValue = std::variant<LiteralScalar, LiteralArray>;
@@ -38,7 +42,7 @@ enum class ValuePresence {
     defaulted,
 };
 
-using RuntimePayload = std::variant<GeometryValue, LiteralValue, EmptyValue, DefaultValue>;
+using RuntimePayload = std::variant<GeometryValue, GeometryCollectionValue, LiteralValue, EmptyValue, DefaultValue>;
 
 struct RuntimeValue {
     ValuePresence presence = ValuePresence::missing;
@@ -47,6 +51,7 @@ struct RuntimeValue {
     [[nodiscard]] static RuntimeValue missing();
     [[nodiscard]] static RuntimeValue empty();
     [[nodiscard]] static RuntimeValue geometry(std::string debug_label);
+    [[nodiscard]] static RuntimeValue geometry_collection(std::vector<GeometryValue> contributions);
     [[nodiscard]] static RuntimeValue literal(LiteralValue value);
     [[nodiscard]] static RuntimeValue defaulted(TypeId source_type);
 
@@ -55,9 +60,11 @@ struct RuntimeValue {
     [[nodiscard]] bool is_empty() const noexcept;
     [[nodiscard]] bool is_defaulted() const noexcept;
     [[nodiscard]] bool is_geometry() const noexcept;
+    [[nodiscard]] bool is_geometry_collection() const noexcept;
     [[nodiscard]] bool is_literal() const noexcept;
 
     [[nodiscard]] const GeometryValue* as_geometry() const noexcept;
+    [[nodiscard]] const GeometryCollectionValue* as_geometry_collection() const noexcept;
     [[nodiscard]] const LiteralValue* as_literal() const noexcept;
     [[nodiscard]] const DefaultValue* as_default() const noexcept;
 };

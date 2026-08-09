@@ -63,10 +63,19 @@ struct InstructionInputs {
     std::vector<PortValue> promised_inputs;
 };
 
+struct InstructionFailure {
+    NodeId node_id = 0;
+    std::optional<std::uint64_t> item_key;
+    std::string message;
+    std::vector<PortValue> input_context;
+    CallStack call_stack;
+};
+
 struct InstructionResult {
     NodeId node_id = 0;
     std::vector<PortValue> produced_outputs;
     std::optional<std::string> failure_message;
+    std::vector<InstructionFailure> failures;
 };
 
 struct InstructionExecutionFrame {
@@ -117,6 +126,7 @@ struct FunctionExecutionResult {
     FunctionExecutionStatus status = FunctionExecutionStatus::completed;
     std::vector<PortValue> outputs;
     std::vector<NodeRuntimeState> node_states;
+    std::vector<InstructionFailure> failures;
     std::optional<std::string> failure_message;
 };
 

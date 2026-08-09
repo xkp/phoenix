@@ -77,15 +77,29 @@ can be made with the full context available.
 ### Control Flow And Errors
 
 - Every instruction has an `else` output port in version one.
-- Throwing routes control through `else`.
-- `else` carries the instruction input context.
-- If a throw is not handled, it propagates upward through the call stack.
-- If no higher-level function handles the throw, the program ends in its current
-  state.
+- Output ports and `else` are independent output channels.
+- An instruction may emit normal outputs and `else` outputs during the same
+  execution.
+- Throwing or item-level failure routes failed input context through `else`
+  when a usable `else` route exists.
+- `else` carries the failed instruction input context.
+- For multiplexing instructions, `else` carries the failed item contexts so
+  downstream instructions can provide fallback behavior per failed item.
+- A multiplexing instruction may generate multiple failures during one
+  execution while still producing successful normal outputs for other items.
+- Repeated item-level geometry emissions to the same downstream input are
+  accumulated rather than overwritten.
+- Multiplexing failures are item-scoped; non-multiplexing failures are
+  instruction-scoped.
+- Instructions may be marked critical.
+- A critical instruction failure that is not handled by `else` fails the current
+  function and propagates upward through the call stack.
+- A non-critical instruction failure that is not handled by `else` is logged and
+  execution continues.
 - For now, handled-failure policies beyond explicit `else` handling can be
   deferred.
-- The core version one rule is that an unhandled exception means the result of
-  that run/configuration is failure.
+- The core version one rule is that only critical unhandled failures make the
+  result of that run/configuration a failure.
 
 ### Parallelism And Determinism
 

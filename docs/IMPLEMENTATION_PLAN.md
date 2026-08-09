@@ -217,16 +217,38 @@ Goal:
 
 Tasks:
 
-- implement instruction failure signaling
-- implement `else` output routing
-- propagate unhandled failures through nested function calls
-- encode the rule that unhandled failure means the result of that run is
-  failure
+- implement instruction failure signaling with support for multiple failure
+  records per instruction execution
+- implement item-scoped failure records for multiplexing instructions
+- implement `else` output routing for failed instruction or item contexts
+- allow normal output ports and `else` to emit during the same instruction
+  execution
+- implement critical-instruction failure semantics
+- propagate critical unhandled failures through nested function calls
+- encode the rule that non-critical unhandled failures are logged and execution
+  continues
 
 Deliverables:
 
 - failure propagation behavior
+- mixed success/failure multiplex behavior
 - error-routing tests
+
+Current status:
+
+- completed for the first deterministic executor slice
+- structured instruction failure records support multiple failure records from
+  one instruction execution
+- item-scoped multiplex failures preserve stable item keys
+- normal outputs and `else` outputs can both be emitted from one instruction
+  execution
+- repeated geometry emissions to the same downstream input are accumulated as a
+  geometry collection
+- handled failures route failed context through `else`
+- non-critical unhandled failures are logged and execution continues
+- critical unhandled failures fail the function while preserving already emitted
+  outputs
+- nested function failures can be handled by the parent call node's `else`
 
 ## Phase 6: Implement Seed And RNG Semantics
 

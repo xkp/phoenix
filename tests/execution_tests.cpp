@@ -100,6 +100,33 @@ bool output_has_geometry_label(
     return false;
 }
 
+bool output_has_geometry_collection_labels(
+    const phoenix::FunctionExecutionResult& result,
+    const char* port,
+    const std::vector<const char*>& labels)
+{
+    for (const auto& output : result.outputs) {
+        if (output.port != port) {
+            continue;
+        }
+
+        const auto* collection = output.value.as_geometry_collection();
+        if (collection == nullptr || collection->contributions.size() != labels.size()) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < labels.size(); ++i) {
+            if (collection->contributions[i].debug_label != labels[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
 bool node_state_is(
     const phoenix::FunctionExecutionResult& result,
     phoenix::NodeId node_id,
@@ -681,6 +708,377 @@ bool test_function_call_reports_missing_callee()
         && result.failure_message.has_value();
 }
 
+bool test_noncritical_unhandled_failure_is_logged_and_execution_continues()
+{
+    FunctionDescriptor function;
+    function.id = "noncritical-unhandled-failure";
+    function.output_ports = {make_output_port("result", "geometry")};
+    function.instructions = {
+        make_instruction(
+            1,
+            "partial_fail",
+            {},
+            {make_output_port("output", "geometry"), make_output_port("else", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    function.edges = {EdgeDescriptor{1, "output", 99, "result"}};
+    function.output_node_id = 99;
+
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "partial_fail",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            phoenix::InstructionResult result;
+            result.node_id = frame.inputs.node_id;
+            result.produced_outputs = {
+                phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("successful-item")},
+            };
+            result.failures = {
+                phoenix::InstructionFailure{
+                    frame.inputs.node_id,
+                    std::uint64_t{4},
+                    "failed item",
+                    {phoenix::PortValue{"input", phoenix::RuntimeValue::geometry("failed-item")}},
+                    frame.call_stack,
+                },
+            };
+            return result;
+        });
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && result.failures.size() == 1
+        && !result.failure_message.has_value()
+        && output_has_geometry_label(result, "result", "successful-item");
+}
+
+bool test_critical_unhandled_failure_fails_function()
+{
+    FunctionDescriptor function;
+    function.id = "critical-unhandled-failure";
+    function.output_ports = {make_output_port("result", "geometry")};
+    auto critical = make_instruction(
+        1,
+        "critical_fail",
+        {},
+        {make_output_port("output", "geometry"), make_output_port("else", "geometry")});
+    critical.failure_is_critical = true;
+    function.instructions = {
+        critical,
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    function.edges = {EdgeDescriptor{1, "output", 99, "result"}};
+    function.output_node_id = 99;
+
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "critical_fail",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            phoenix::InstructionResult result;
+            result.node_id = frame.inputs.node_id;
+            result.produced_outputs = {
+                phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("partial")},
+            };
+            result.failures = {
+                phoenix::InstructionFailure{
+                    frame.inputs.node_id,
+                    std::nullopt,
+                    "critical failure",
+                    {},
+                    frame.call_stack,
+                },
+            };
+            return result;
+        });
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::failed
+        && result.failures.size() == 1
+        && result.failure_message.has_value()
+        && output_has_geometry_label(result, "result", "partial");
+}
+
+bool test_handled_failure_routes_failed_item_through_else()
+{
+    FunctionDescriptor function;
+    function.id = "handled-failure";
+    function.output_ports = {
+        make_output_port("success", "geometry"),
+        make_output_port("fallback", "geometry"),
+    };
+    function.instructions = {
+        make_instruction(
+            1,
+            "mixed_mux",
+            {},
+            {make_output_port("output", "geometry"), make_output_port("else", "geometry")}),
+        make_instruction(
+            2,
+            "fallback",
+            {make_input_port("input", "geometry")},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("success", "geometry"), make_input_port("fallback", "geometry")},
+            {}),
+    };
+    function.edges = {
+        EdgeDescriptor{1, "output", 99, "success"},
+        EdgeDescriptor{1, "else", 2, "input"},
+        EdgeDescriptor{2, "output", 99, "fallback"},
+    };
+    function.output_node_id = 99;
+
+    bool fallback_saw_failed_item = false;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "mixed_mux",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            phoenix::InstructionResult result;
+            result.node_id = frame.inputs.node_id;
+            result.produced_outputs = {
+                phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("success-item")},
+            };
+            result.failures = {
+                phoenix::InstructionFailure{
+                    frame.inputs.node_id,
+                    std::uint64_t{2},
+                    "item failed",
+                    {phoenix::PortValue{"input", phoenix::RuntimeValue::geometry("failed-item")}},
+                    frame.call_stack,
+                },
+            };
+            return result;
+        });
+    registry.register_handler(
+        "fallback",
+        [&fallback_saw_failed_item](const phoenix::InstructionExecutionFrame& frame) {
+            const auto* input = find_input(frame, "input");
+            const auto* geometry = input == nullptr ? nullptr : input->as_geometry();
+            fallback_saw_failed_item = geometry != nullptr && geometry->debug_label == "failed-item";
+
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("fallback-item")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && result.failures.size() == 1
+        && fallback_saw_failed_item
+        && output_has_geometry_label(result, "success", "success-item")
+        && output_has_geometry_label(result, "fallback", "fallback-item");
+}
+
+bool test_multiplexed_successes_and_failures_accumulate()
+{
+    FunctionDescriptor function;
+    function.id = "multiplexed-mixed-results";
+    function.output_ports = {
+        make_output_port("success", "geometry"),
+        make_output_port("fallback", "geometry"),
+    };
+    auto mixed_mux = make_instruction(
+        1,
+        "mixed_mux_many",
+        {},
+        {make_output_port("output", "geometry"), make_output_port("else", "geometry")});
+    mixed_mux.multiplexes_input = true;
+    function.instructions = {
+        mixed_mux,
+        make_instruction(
+            2,
+            "fallback_many",
+            {make_input_port("input", "geometry")},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("success", "geometry"), make_input_port("fallback", "geometry")},
+            {}),
+    };
+    function.edges = {
+        EdgeDescriptor{1, "output", 99, "success"},
+        EdgeDescriptor{1, "else", 2, "input"},
+        EdgeDescriptor{2, "output", 99, "fallback"},
+    };
+    function.output_node_id = 99;
+
+    bool fallback_saw_failed_items = false;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "mixed_mux_many",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            phoenix::InstructionResult result;
+            result.node_id = frame.inputs.node_id;
+            result.produced_outputs = {
+                phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("success-1")},
+                phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("success-2")},
+            };
+            result.failures = {
+                phoenix::InstructionFailure{
+                    frame.inputs.node_id,
+                    std::uint64_t{1},
+                    "first failed item",
+                    {phoenix::PortValue{"input", phoenix::RuntimeValue::geometry("failed-1")}},
+                    frame.call_stack,
+                },
+                phoenix::InstructionFailure{
+                    frame.inputs.node_id,
+                    std::uint64_t{3},
+                    "second failed item",
+                    {phoenix::PortValue{"input", phoenix::RuntimeValue::geometry("failed-2")}},
+                    frame.call_stack,
+                },
+            };
+            return result;
+        });
+    registry.register_handler(
+        "fallback_many",
+        [&fallback_saw_failed_items](const phoenix::InstructionExecutionFrame& frame) {
+            const auto* input = find_input(frame, "input");
+            const auto* collection = input == nullptr ? nullptr : input->as_geometry_collection();
+            fallback_saw_failed_items = collection != nullptr
+                && collection->contributions.size() == 2
+                && collection->contributions[0].debug_label == "failed-1"
+                && collection->contributions[1].debug_label == "failed-2";
+
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("fallback-collection")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && result.failures.size() == 2
+        && result.failures[0].item_key.has_value()
+        && *result.failures[0].item_key == 1
+        && result.failures[1].item_key.has_value()
+        && *result.failures[1].item_key == 3
+        && fallback_saw_failed_items
+        && output_has_geometry_collection_labels(result, "success", {"success-1", "success-2"})
+        && output_has_geometry_label(result, "fallback", "fallback-collection");
+}
+
+bool test_nested_function_failure_can_be_handled_by_call_else()
+{
+    FunctionDescriptor child;
+    child.id = "failing-child";
+    auto child_failure = make_instruction(
+        7,
+        "child_failure",
+        {},
+        {make_output_port("output", "geometry"), make_output_port("else", "geometry")});
+    child_failure.failure_is_critical = true;
+    child.instructions = {
+        child_failure,
+    };
+
+    FunctionDescriptor parent;
+    parent.id = "parent-handles-child";
+    parent.output_ports = {make_output_port("result", "geometry")};
+    auto call_child = make_instruction(
+        1,
+        "call",
+        {},
+        {make_output_port("output", "geometry"), make_output_port("else", "geometry")});
+    call_child.called_function_id = "failing-child";
+    parent.instructions = {
+        call_child,
+        make_instruction(
+            2,
+            "fallback",
+            {make_input_port("input", "string")},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    parent.edges = {
+        EdgeDescriptor{1, "else", 2, "input"},
+        EdgeDescriptor{2, "output", 99, "result"},
+    };
+    parent.output_node_id = 99;
+
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "child_failure",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            phoenix::InstructionResult result;
+            result.node_id = frame.inputs.node_id;
+            result.failures = {
+                phoenix::InstructionFailure{
+                    frame.inputs.node_id,
+                    std::nullopt,
+                    "child failed",
+                    {},
+                    frame.call_stack,
+                },
+            };
+            return result;
+        });
+    registry.register_handler(
+        "fallback",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("parent-fallback")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionLibrary functions;
+    functions.register_function(parent);
+    functions.register_function(child);
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &parent;
+    request.context.function_id = parent.id;
+    request.context.call_path = {"root"};
+
+    const phoenix::FunctionExecutor executor(registry, functions);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && result.failures.size() == 1
+        && output_has_geometry_label(result, "result", "parent-fallback");
+}
+
 bool test_effective_seed_is_deterministic()
 {
     FunctionDescriptor function;
@@ -763,6 +1161,11 @@ int main()
     ok = run_test("nested function call pushes call frame", test_nested_function_call_pushes_call_frame) && ok;
     ok = run_test("function call requires function library", test_function_call_requires_function_library) && ok;
     ok = run_test("function call reports missing callee", test_function_call_reports_missing_callee) && ok;
+    ok = run_test("noncritical unhandled failure is logged and execution continues", test_noncritical_unhandled_failure_is_logged_and_execution_continues) && ok;
+    ok = run_test("critical unhandled failure fails function", test_critical_unhandled_failure_fails_function) && ok;
+    ok = run_test("handled failure routes failed item through else", test_handled_failure_routes_failed_item_through_else) && ok;
+    ok = run_test("multiplexed successes and failures accumulate", test_multiplexed_successes_and_failures_accumulate) && ok;
+    ok = run_test("nested function failure can be handled by call else", test_nested_function_failure_can_be_handled_by_call_else) && ok;
     ok = run_test("effective seed is deterministic", test_effective_seed_is_deterministic) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;

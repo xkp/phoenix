@@ -25,6 +25,21 @@ bool test_geometry_value()
         && geometry->debug_label == "window_mesh";
 }
 
+bool test_geometry_collection_value()
+{
+    const auto value = phoenix::RuntimeValue::geometry_collection({
+        phoenix::GeometryValue{"failed-a"},
+        phoenix::GeometryValue{"failed-b"},
+    });
+    const auto* collection = value.as_geometry_collection();
+    return value.is_present()
+        && value.is_geometry_collection()
+        && collection != nullptr
+        && collection->contributions.size() == 2
+        && collection->contributions[0].debug_label == "failed-a"
+        && collection->contributions[1].debug_label == "failed-b";
+}
+
 bool test_literal_value()
 {
     const auto value = phoenix::RuntimeValue::literal(phoenix::LiteralValue{std::int64_t{7}});
@@ -148,6 +163,7 @@ int main()
     ok = run_test("missing value", test_missing_value) && ok;
     ok = run_test("empty value", test_empty_value) && ok;
     ok = run_test("geometry value", test_geometry_value) && ok;
+    ok = run_test("geometry collection value", test_geometry_collection_value) && ok;
     ok = run_test("literal value", test_literal_value) && ok;
     ok = run_test("literal kind", test_literal_kind) && ok;
     ok = run_test("literal first scalar from array", test_literal_first_scalar_from_array) && ok;

@@ -251,22 +251,41 @@ Rules:
 
 Every instruction exposes an `else` output port in version one.
 
-If an instruction fails:
+Output ports and `else` are independent output channels. An instruction may emit
+normal outputs and `else` outputs during the same execution.
 
-- it may throw
-- failure is routed through `else`
-- the `else` path receives the instruction input context as its value
+If an instruction encounters one or more failures:
+
+- it may emit normal outputs for successful work
+- it may emit failed input contexts through `else`
+- `else` receives the failed instruction input context as its value
+- if the instruction multiplexes, `else` receives the failed item contexts
+- if the instruction does not multiplex, the failure is instruction-scoped
 
 This supports the pattern:
 
 - do this operation
-- if it fails, continue through `else`
+- for failed inputs or items, continue through `else`
+- for successful inputs or items, continue through normal outputs
 
-If an instruction throws and no usable `else` path handles the failure, the
-current function throws upward through the call stack.
+For multiplexing instructions, failure is item-scoped. One execution may produce
+successful normal outputs for some items and `else` outputs for other failed
+items.
 
-If no higher-level function handles the throw, the program ends in its current
-state.
+When multiple geometry values are delivered to the same downstream input during
+one function invocation, they are accumulated as a geometry collection. This
+allows repeated item-level normal outputs or repeated item-level `else` outputs
+to remain visible to the receiving instruction instead of overwriting each
+other.
+
+Instructions may be marked critical.
+
+If a critical instruction produces a failure and no usable `else` path handles
+that failure, the current function fails and the failure propagates upward
+through the call stack.
+
+If a non-critical instruction produces a failure and no usable `else` path
+handles that failure, the runtime logs the failure and execution continues.
 
 ## 9. Multiplexing
 

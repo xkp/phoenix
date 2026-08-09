@@ -36,6 +36,7 @@ struct InstructionDescriptor {
     bool generates_actor = false;
     bool multiplexes_input = false;
     bool has_else_port = true;
+    bool failure_is_critical = false;
     std::optional<SeedValue> local_seed;
     std::optional<FunctionId> called_function_id;
 };
