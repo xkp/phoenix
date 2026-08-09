@@ -146,6 +146,8 @@ can be made with the full context available.
 - An actor-generating function produces one actor per call.
 - A multiplexed actor-generating function may produce multiple actors from one
   instruction call, one per multiplexed item.
+- Multiplexed actor generation is the baseline behavior that instancing later
+  optimizes.
 - Each actor may contain its own child hierarchy.
 - The top-level program produces exactly one root actor.
 - Parent actor-generating functions create parent actors, and child
@@ -188,6 +190,8 @@ can be made with the full context available.
 - The system should support generating an actor once and placing it multiple
   times as instances instead of rerunning the same actor-generating function for
   every repeated element.
+- Instancing can only reuse generation for effective inputs that are known to be
+  geometrically/topologically equivalent.
 - A generated actor may act as a reusable prototype/definition.
 - Multiple instances may share the same underlying generated actor content.
 - Instance placement is separate from actor generation.

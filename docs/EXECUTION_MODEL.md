@@ -432,6 +432,10 @@ When an actor-generating function runs, it creates one actor for that function
 call. If the function call is multiplexed, it may create one actor per
 multiplexed item.
 
+The baseline semantics are equivalent to running the actor-generating function
+once per item. Instancing may later optimize equivalent item runs, but it must
+preserve the same observable actor hierarchy.
+
 Actor hierarchy construction is function-driven:
 
 - a parent actor-generating function creates the parent actor
@@ -484,6 +488,10 @@ retained logical actors is preferred when possible.
 
 Version one instancing means shared generated actor content with distinct
 placements.
+
+Instancing is an optimization. It may skip rerunning an actor-generating graph
+only when the effective generation inputs are known to be equivalent, including
+topology-relevant geometry identity once geometry keys are available.
 
 Rules:
 

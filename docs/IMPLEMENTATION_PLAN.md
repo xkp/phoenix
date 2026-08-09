@@ -319,6 +319,10 @@ Current status:
 - top-level execution creates a deterministic root actor
 - non-actor nested functions inherit the caller's current actor
 - actor-generating nested functions create deterministic child actors
+- multiplexed actor-generating calls create one deterministic child actor per
+  input item
+- failed multiplex items route through the call node's `else` without committing
+  a child actor for that failed item
 
 Remaining Phase 7 work:
 
@@ -326,7 +330,6 @@ Remaining Phase 7 work:
 - define actor-local geometry payload and accumulation rules after geometry
   representation is settled
 - define actor naming policy
-- extend actor generation for multiplexed actor-generating functions
 - refine actor id policy for later partial-rerun retention
 - decide how actor outputs interact with parent-side graph dependencies
 
@@ -335,12 +338,16 @@ Remaining Phase 7 work:
 Goal:
 
 - support reusable actor prototypes and instance placement
+- treat instancing as an optimization over the baseline multiplex actor
+  generation semantics
 
 Tasks:
 
 - implement actor prototype creation from one actor-generating execution
 - implement instance placement with distinct transforms
 - allow multiple placed instances to share the same generated actor content
+- only share a prototype when the effective generation inputs are known to be
+  geometrically/topologically equivalent
 - keep instance placement separate from actor generation
 - ensure deterministic hierarchy order under instancing
 

@@ -316,6 +316,67 @@ FunctionCallPath child_call_path(
     return path;
 }
 
+FunctionCallPath item_call_path(FunctionCallPath path, std::uint64_t item_key)
+{
+    std::ostringstream segment;
+    segment << "item:" << item_key;
+    path.push_back(segment.str());
+    return path;
+}
+
+struct ChildInvocation {
+    std::optional<std::uint64_t> item_key;
+    FunctionCallPath call_path;
+    std::vector<PortValue> inputs;
+};
+
+std::vector<ChildInvocation> child_invocations_for(
+    const InstructionDescriptor& instruction,
+    const FunctionCallPath& base_call_path,
+    const std::vector<PortValue>& inputs)
+{
+    if (!instruction.multiplexes_input) {
+        return {ChildInvocation{std::nullopt, base_call_path, inputs}};
+    }
+
+    const auto input_it = std::find_if(
+        inputs.begin(),
+        inputs.end(),
+        [](const PortValue& input) {
+            return input.port == "input";
+        });
+    if (input_it == inputs.end() || input_it->value.is_missing()) {
+        return {};
+    }
+
+    if (const auto* collection = input_it->value.as_geometry_collection()) {
+        std::vector<ChildInvocation> invocations;
+        invocations.reserve(collection->contributions.size());
+
+        for (std::size_t i = 0; i < collection->contributions.size(); ++i) {
+            auto item_inputs = inputs;
+            auto item_input = std::find_if(
+                item_inputs.begin(),
+                item_inputs.end(),
+                [](const PortValue& input) {
+                    return input.port == "input";
+                });
+            item_input->value = RuntimeValue::geometry(collection->contributions[i].debug_label);
+
+            const auto item_key = static_cast<std::uint64_t>(i);
+            invocations.push_back(ChildInvocation{
+                item_key,
+                item_call_path(base_call_path, item_key),
+                std::move(item_inputs),
+            });
+        }
+
+        return invocations;
+    }
+
+    return {ChildInvocation{std::uint64_t{0}, item_call_path(base_call_path, 0), inputs}};
+}
+
 std::vector<PortValue> outputs_as_instruction_outputs(
     NodeId node_id,
     const std::vector<PortValue>& function_outputs)
@@ -814,53 +875,74 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                 request.context,
                 instruction->id,
                 *instruction->called_function_id);
-            const ActorId child_actor_id = child_function->generates_actor
-                ? actor_id_from_call_path(path)
-                : current_actor_id;
-            CallStack child_stack = call_stack;
-            child_stack.push(CallFrame{
-                *instruction->called_function_id,
+            const auto child_invocations = child_invocations_for(
+                *instruction,
                 path,
-                instruction->id,
-                child_actor_id,
-            });
+                frame.inputs.promised_inputs);
 
-            FunctionExecutionRequest child_request;
-            child_request.function = child_function;
-            child_request.inputs = frame.inputs.promised_inputs;
-            child_request.context.function_id = *instruction->called_function_id;
-            child_request.context.call_path = path;
-            child_request.context.global_seed = request.context.global_seed;
-            child_request.call_stack = child_stack;
+            instruction_result.node_id = node_id;
+            for (const auto& child_invocation : child_invocations) {
+                const ActorId child_actor_id = child_function->generates_actor
+                    ? actor_id_from_call_path(child_invocation.call_path)
+                    : current_actor_id;
+                CallStack child_stack = call_stack;
+                child_stack.push(CallFrame{
+                    *instruction->called_function_id,
+                    child_invocation.call_path,
+                    instruction->id,
+                    child_actor_id,
+                });
 
-            const auto child_result = run(child_request);
-            if (child_result.actor.has_value()) {
-                if (child_function->generates_actor) {
-                    actor.children.push_back(*child_result.actor);
-                } else {
-                    merge_child_actors(actor, *child_result.actor);
+                FunctionExecutionRequest child_request;
+                child_request.function = child_function;
+                child_request.inputs = child_invocation.inputs;
+                child_request.context.function_id = *instruction->called_function_id;
+                child_request.context.call_path = child_invocation.call_path;
+                child_request.context.global_seed = request.context.global_seed;
+                child_request.call_stack = child_stack;
+
+                const auto child_result = run(child_request);
+                if (child_result.status == FunctionExecutionStatus::completed
+                    && child_result.actor.has_value()) {
+                    if (child_function->generates_actor) {
+                        actor.children.push_back(*child_result.actor);
+                    } else {
+                        merge_child_actors(actor, *child_result.actor);
+                    }
                 }
-            }
 
-            if (child_result.status != FunctionExecutionStatus::completed) {
-                instruction_result.node_id = node_id;
-                instruction_result.produced_outputs =
-                    outputs_as_instruction_outputs(node_id, child_result.outputs);
-                instruction_result.failures = child_result.failures;
-                if (instruction_result.failures.empty()) {
-                    instruction_result.failures.push_back(InstructionFailure{
-                        node_id,
-                        std::nullopt,
-                        child_result.failure_message.value_or("Nested function call failed."),
-                        frame.inputs.promised_inputs,
-                        frame.call_stack,
-                    });
-                    instruction_result.failure_message = child_result.failure_message;
+                const auto child_outputs = outputs_as_instruction_outputs(node_id, child_result.outputs);
+                instruction_result.produced_outputs.insert(
+                    instruction_result.produced_outputs.end(),
+                    child_outputs.begin(),
+                    child_outputs.end());
+
+                if (child_result.status != FunctionExecutionStatus::completed) {
+                    const auto first_new_failure = instruction_result.failures.size();
+                    instruction_result.failures.insert(
+                        instruction_result.failures.end(),
+                        child_result.failures.begin(),
+                        child_result.failures.end());
+                    if (child_result.failures.empty()) {
+                        instruction_result.failures.push_back(InstructionFailure{
+                            node_id,
+                            child_invocation.item_key,
+                            child_result.failure_message.value_or("Nested function call failed."),
+                            child_invocation.inputs,
+                            frame.call_stack,
+                        });
+                        instruction_result.failure_message = child_result.failure_message;
+                    } else if (child_invocation.item_key.has_value()) {
+                        for (auto failure_it = instruction_result.failures.begin() + first_new_failure;
+                             failure_it != instruction_result.failures.end();
+                             ++failure_it) {
+                            auto& failure = *failure_it;
+                            if (!failure.item_key.has_value()) {
+                                failure.item_key = child_invocation.item_key;
+                            }
+                        }
+                    }
                 }
-            } else {
-                instruction_result.node_id = node_id;
-                instruction_result.produced_outputs =
-                    outputs_as_instruction_outputs(node_id, child_result.outputs);
             }
         } else {
             const auto* handler = registry_->find_handler(instruction->kind);
