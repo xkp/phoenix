@@ -236,6 +236,8 @@ can be made with the full context available.
   - invalidation cascades through all downstream dependent instructions
   - if an actor exposes outputs that feed ancestors or other parent-side work,
     invalidation continues through those dependent paths too
+- The first invalidation slice can operate inside one function graph before
+  cache-backed reruns exist.
 - When something changes inside an inner actor, the affected actor and its
   descendants are invalidated as needed by dependency propagation.
 - If actor outputs affect parent-side work, invalidation must continue upward

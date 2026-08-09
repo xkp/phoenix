@@ -532,6 +532,11 @@ The canonical invalidation rule is:
 - if an actor exposes outputs that feed ancestors or other parent-side work,
   invalidation continues through those dependent paths too
 
+The initial invalidation planner operates within one function graph. Given
+changed instruction ids, it marks those instructions and all downstream
+instructions dirty, reports whether function outputs are affected, and reports
+whether the actor subtree or parent-side work may need rerun.
+
 Version one partial reruns must support parameter changes, input geometry
 changes, function body changes, graph wiring changes, and seed changes. Some
 changes, such as a global seed change or top-level input geometry change, may

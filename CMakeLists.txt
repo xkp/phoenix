@@ -84,3 +84,20 @@ if(MSVC)
 else()
     target_compile_options(phoenix_execution_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+add_executable(phoenix_invalidation_tests
+    src/graph.cpp
+    src/invalidation.cpp
+    tests/invalidation_tests.cpp
+)
+
+target_include_directories(phoenix_invalidation_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_invalidation_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_invalidation_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()

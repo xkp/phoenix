@@ -398,6 +398,23 @@ Deliverables:
 - scene patch/update logic
 - invalidation tests
 
+Current status:
+
+- implementation started with invalidation scaffolding
+- `InvalidationPlanner` expands changed instruction ids through downstream
+  graph dependencies
+- invalidation results report dirty instruction ids, function-output impact,
+  actor-subtree impact, and parent-propagation need
+- invalid changed instruction ids are ignored
+
+Remaining Phase 9 work:
+
+- map dirty function calls to affected actor subtree scopes
+- define in-place scene update operations
+- preserve unaffected actor ids during subtree replacement
+- propagate dirty scope across parent/child function boundaries
+- integrate cache lookup once Phase 10 cache keys exist
+
 ## Phase 10: Implement Caching
 
 Goal:
