@@ -238,6 +238,9 @@ can be made with the full context available.
     invalidation continues through those dependent paths too
 - The first invalidation slice can operate inside one function graph before
   cache-backed reruns exist.
+- Invalidation should be explainable with stable reason codes for diagnostics.
+- Partial rerun planning should be able to determine dirty work and cache
+  availability before mutating execution or scene state.
 - When something changes inside an inner actor, the affected actor and its
   descendants are invalidated as needed by dependency propagation.
 - If actor outputs affect parent-side work, invalidation must continue upward
@@ -245,6 +248,8 @@ can be made with the full context available.
 - After partial rerun, version one updates the scene in place.
 - Scene updates should make the minimum changes needed to reflect the new
   result.
+- Structural actor subtree replacement can be implemented before geometry-only
+  patching, because it only depends on actor identity and hierarchy.
 - If only geometry changes and hierarchy does not, only the geometry payload
   should be replaced.
 - Unaffected sibling actor ids must remain stable across partial reruns.
@@ -274,6 +279,12 @@ can be made with the full context available.
 - Initial workflows may be user-induced before full automatic scope computation
   exists.
 - Caching is required for partial runs in version one.
+- Cache identity must include function/call identity, graph/body identity,
+  input identity, and seed identity before cached work can be reused.
+- The cache must support invalidating dirty deterministic identities without
+  inspecting or copying heavy geometry payloads.
+- Cache storage must account for heavy geometry payloads and should not assume
+  cheap deep copies in the production implementation.
 
 ## Open Requirement Follow-Ups
 

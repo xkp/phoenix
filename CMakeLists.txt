@@ -101,3 +101,57 @@ if(MSVC)
 else()
     target_compile_options(phoenix_invalidation_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+add_executable(phoenix_cache_tests
+    src/cache.cpp
+    src/values.cpp
+    tests/cache_tests.cpp
+)
+
+target_include_directories(phoenix_cache_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_cache_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_cache_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_partial_run_tests
+    src/cache.cpp
+    src/graph.cpp
+    src/invalidation.cpp
+    src/partial_run.cpp
+    src/values.cpp
+    tests/partial_run_tests.cpp
+)
+
+target_include_directories(phoenix_partial_run_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_partial_run_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_partial_run_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_scene_update_tests
+    src/scene_update.cpp
+    src/values.cpp
+    tests/scene_update_tests.cpp
+)
+
+target_include_directories(phoenix_scene_update_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_scene_update_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_scene_update_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()

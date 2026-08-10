@@ -33,6 +33,11 @@ bool dirty_actor_instruction_exists(
     return false;
 }
 
+void add_reason(std::vector<InvalidationReason>& reasons, InvalidationReason reason)
+{
+    reasons.push_back(reason);
+}
+
 } // namespace
 
 InvalidationResult InvalidationPlanner::plan(const InvalidationRequest& request) const
@@ -76,7 +81,37 @@ InvalidationResult InvalidationPlanner::plan(const InvalidationRequest& request)
     result.actor_subtree_affected = function.generates_actor
         || dirty_actor_instruction_exists(function, dirty);
     result.parent_propagation_required = result.function_outputs_affected;
+
+    if (!result.dirty_instructions.empty()) {
+        add_reason(result.reasons, InvalidationReason::instruction_dirty);
+    }
+    if (result.function_outputs_affected) {
+        add_reason(result.reasons, InvalidationReason::function_outputs_affected);
+    }
+    if (result.actor_subtree_affected) {
+        add_reason(result.reasons, InvalidationReason::actor_subtree_affected);
+    }
+    if (result.parent_propagation_required) {
+        add_reason(result.reasons, InvalidationReason::parent_propagation_required);
+    }
+
     return result;
+}
+
+const char* to_string(InvalidationReason reason) noexcept
+{
+    switch (reason) {
+    case InvalidationReason::instruction_dirty:
+        return "instruction_dirty";
+    case InvalidationReason::function_outputs_affected:
+        return "function_outputs_affected";
+    case InvalidationReason::actor_subtree_affected:
+        return "actor_subtree_affected";
+    case InvalidationReason::parent_propagation_required:
+        return "parent_propagation_required";
+    }
+
+    return "unknown";
 }
 
 } // namespace phoenix

@@ -405,15 +405,26 @@ Current status:
   graph dependencies
 - invalidation results report dirty instruction ids, function-output impact,
   actor-subtree impact, and parent-propagation need
+- invalidation results include stable reason codes for diagnostics
+- multiple changed instruction ids merge into one dirty set
+- leaf changes that do not reach function outputs do not require parent
+  propagation
 - invalid changed instruction ids are ignored
+- `PartialRerunPlanner` combines invalidation scope with cache identity and
+  cache-hit information
+- partial rerun plans report dirty instruction cache keys, function-call cache
+  availability, and actor-subtree cache availability
+- `SceneUpdater` can replace an actor subtree in place by actor id
+- scene subtree replacement preserves unaffected ancestor and sibling ids and
+  ordering
+- root actor replacement is supported for full-root rerun/update cases
 
 Remaining Phase 9 work:
 
 - map dirty function calls to affected actor subtree scopes
-- define in-place scene update operations
-- preserve unaffected actor ids during subtree replacement
+- define geometry-only scene patch operations once geometry payloads settle
 - propagate dirty scope across parent/child function boundaries
-- integrate cache lookup once Phase 10 cache keys exist
+- integrate partial rerun plans into executor/scene update behavior
 
 ## Phase 10: Implement Caching
 
@@ -442,6 +453,29 @@ Deliverables:
 - cache subsystem
 - invalidation-aware cache policy
 - cache correctness tests
+
+Current status:
+
+- implementation started with deterministic cache identity scaffolding
+- `CacheKeyBuilder` creates keys for instruction outputs, function calls, actor
+  subtrees, and actor prototypes
+- keys include function identity, call path, graph revision placeholder, input
+  fingerprint placeholder, seed identity, and kind-specific fields
+- actor prototype keys include explicit instance keys
+- `MemoryCacheStore` provides in-memory put/find behavior for instruction
+  outputs, function calls, actor subtrees, and actor prototypes
+- cache families are stored separately to avoid cross-kind collisions
+- partial rerun planning can query cache availability without executing a rerun
+- `MemoryCacheStore` supports explicit eviction for individual cache entries
+  and identity-scoped clearing across all cache families
+
+Remaining Phase 10 work:
+
+- define production storage for heavy geometry payloads
+- define real graph/body revision fingerprints
+- define real input fingerprints, including topology-aware geometry identity
+- integrate cache lookup with partial rerun/invalidation decisions
+- validate cached reuse against full rerun equivalence
 
 ## Phase 11: Introduce Parallel Execution
 

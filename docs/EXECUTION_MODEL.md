@@ -537,6 +537,16 @@ changed instruction ids, it marks those instructions and all downstream
 instructions dirty, reports whether function outputs are affected, and reports
 whether the actor subtree or parent-side work may need rerun.
 
+Invalidation results also carry stable reason codes so later diagnostics can
+explain whether a result is dirty because instructions changed, function outputs
+are affected, actor subtree work is affected, or parent-side propagation is
+required.
+
+Partial rerun planning combines the invalidation result with cache identity. The
+planner can report cache keys and cache-hit availability for dirty instructions,
+the enclosing function call, and the affected actor subtree before any executor
+or scene mutation occurs.
+
 Version one partial reruns must support parameter changes, input geometry
 changes, function body changes, graph wiring changes, and seed changes. Some
 changes, such as a global seed change or top-level input geometry change, may
@@ -556,6 +566,12 @@ The runtime should make the minimum changes needed to reflect the new result:
   logical actor, when possible
 
 A partial rerun must produce the same final scene as a full rerun from scratch.
+
+The first scene update implementation supports structural subtree replacement
+by actor id. Replacing a subtree preserves unaffected ancestors and siblings,
+including their ids and sibling order. Replacing the root actor is also valid
+when the rerun scope is the whole scene root. Geometry-only patching remains
+deferred until the concrete actor geometry payload model is settled.
 
 ### 13.4 Failure During Partial Rerun
 
@@ -587,6 +603,22 @@ Version one should define caches at least for:
 - function calls
 - actor subtrees
 - instruction outputs
+
+Cache identity is separated from cache storage. Cache keys include the reusable
+work kind, function identity, call path, graph/body revision, input fingerprint,
+seed identity, and kind-specific fields such as instruction node id, actor id,
+or explicit instance key.
+
+The first cache store is an in-memory correctness implementation. Production
+storage for heavy geometry payloads remains an implementation concern and should
+avoid unnecessary deep copies.
+
+The in-memory cache store supports explicit removal of individual entries and
+identity-scoped clearing across all cache families. Identity-scoped clearing is
+the first invalidation bridge: when a function/call/input/seed identity is known
+dirty, cached instruction outputs, function call results, actor subtrees, and
+actor prototypes for that identity can be removed before rerun work is planned
+or applied.
 
 ## 15. Validation Rules
 
