@@ -32,6 +32,14 @@ enum class FunctionExecutionStatus {
     failed,
 };
 
+enum class ExecutionTraceLevel {
+    none,
+    scope,
+    instruction,
+    item,
+    value,
+};
+
 struct ExecutionContext {
     FunctionId function_id;
     FunctionCallPath call_path;
@@ -119,12 +127,51 @@ private:
     std::unordered_map<FunctionId, const FunctionDescriptor*> functions_;
 };
 
+struct FunctionExecutionScopeRecord {
+    FunctionId function_id;
+    const FunctionDescriptor* function = nullptr;
+    FunctionCallPath call_path;
+    ActorId actor_id;
+    bool generates_actor = false;
+    std::optional<NodeId> caller_node_id;
+    std::optional<std::size_t> parent_scope_index;
+    std::vector<PortValue> inputs;
+    std::unordered_map<NodeId, std::vector<PortValue>> input_defaults;
+    SeedValue global_seed = 0;
+};
+
+class FunctionExecutionScopeTraceSink {
+public:
+    virtual ~FunctionExecutionScopeTraceSink() = default;
+
+    [[nodiscard]] virtual std::size_t record_scope(FunctionExecutionScopeRecord scope) = 0;
+};
+
+struct FunctionExecutionInstructionRecord {
+    FunctionId function_id;
+    FunctionCallPath call_path;
+    NodeId node_id = 0;
+    std::string instruction_kind;
+    std::optional<ActorId> actor_id;
+};
+
+class FunctionExecutionInstructionTraceSink {
+public:
+    virtual ~FunctionExecutionInstructionTraceSink() = default;
+
+    virtual void record_instruction(FunctionExecutionInstructionRecord instruction) = 0;
+};
+
 struct FunctionExecutionRequest {
     const FunctionDescriptor* function = nullptr;
     std::vector<PortValue> inputs;
     std::unordered_map<NodeId, std::vector<PortValue>> input_defaults;
     ExecutionContext context;
     CallStack call_stack;
+    ExecutionTraceLevel trace_level = ExecutionTraceLevel::none;
+    FunctionExecutionScopeTraceSink* scope_trace_sink = nullptr;
+    FunctionExecutionInstructionTraceSink* instruction_trace_sink = nullptr;
+    std::optional<std::size_t> parent_scope_index;
 };
 
 struct FunctionExecutionResult {
@@ -151,5 +198,6 @@ private:
 
 [[nodiscard]] std::string to_string(InstructionState state);
 [[nodiscard]] std::string to_string(FunctionExecutionStatus status);
+[[nodiscard]] std::string to_string(ExecutionTraceLevel level);
 
 } // namespace phoenix

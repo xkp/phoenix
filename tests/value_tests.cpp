@@ -19,10 +19,12 @@ bool test_empty_value()
 
 bool test_geometry_value()
 {
-    const auto value = phoenix::RuntimeValue::geometry("window_mesh");
+    const auto value = phoenix::RuntimeValue::geometry("window_mesh", "actor:window");
     const auto* geometry = value.as_geometry();
     return value.is_present() && value.is_geometry() && geometry != nullptr
-        && geometry->debug_label == "window_mesh";
+        && geometry->debug_label == "window_mesh"
+        && geometry->accumulation_actor_id.has_value()
+        && *geometry->accumulation_actor_id == "actor:window";
 }
 
 bool test_geometry_collection_value()
@@ -135,8 +137,8 @@ bool test_geometry_aggregation()
     phoenix::GeometryAggregationInput input;
     input.port = "mesh";
     input.contributions = {
-        phoenix::GeometryValue{"a"},
-        phoenix::GeometryValue{"b"},
+        phoenix::GeometryValue{"a", "actor:owner"},
+        phoenix::GeometryValue{"b", "actor:owner"},
     };
 
     const phoenix::GeometryAggregator aggregator;
@@ -144,7 +146,28 @@ bool test_geometry_aggregation()
 
     return aggregate.port == "mesh"
         && aggregate.contributions.size() == 2
-        && !aggregate.materialized;
+        && aggregate.accumulation_actor_id.has_value()
+        && *aggregate.accumulation_actor_id == "actor:owner"
+        && !aggregate.materialized
+        && aggregate.status == phoenix::GeometryAggregationStatus::aggregated;
+}
+
+bool test_geometry_aggregation_rejects_cross_actor_owners()
+{
+    phoenix::GeometryAggregationInput input;
+    input.port = "mesh";
+    input.contributions = {
+        phoenix::GeometryValue{"a", "actor:a"},
+        phoenix::GeometryValue{"b", "actor:b"},
+    };
+
+    const phoenix::GeometryAggregator aggregator;
+    const auto aggregate = aggregator.aggregate(input);
+
+    return aggregate.port == "mesh"
+        && aggregate.contributions.size() == 2
+        && !aggregate.accumulation_actor_id.has_value()
+        && aggregate.status == phoenix::GeometryAggregationStatus::owner_conflict;
 }
 
 bool run_test(const char* name, bool (*test_fn)())
@@ -172,6 +195,7 @@ int main()
     ok = run_test("port state readiness", test_port_state_readiness) && ok;
     ok = run_test("input set state", test_input_set_state) && ok;
     ok = run_test("geometry aggregation", test_geometry_aggregation) && ok;
+    ok = run_test("geometry aggregation rejects cross actor owners", test_geometry_aggregation_rejects_cross_actor_owners) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

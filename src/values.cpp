@@ -1,6 +1,53 @@
 #include "phoenix/values.hpp"
 
+#include <utility>
+
 namespace phoenix {
+namespace {
+
+std::optional<ActorId> common_owner(const std::vector<GeometryValue>& contributions)
+{
+    std::optional<ActorId> owner;
+    for (const auto& contribution : contributions) {
+        if (!contribution.accumulation_actor_id.has_value()) {
+            continue;
+        }
+
+        if (!owner.has_value()) {
+            owner = contribution.accumulation_actor_id;
+            continue;
+        }
+
+        if (*owner != *contribution.accumulation_actor_id) {
+            return std::nullopt;
+        }
+    }
+
+    return owner;
+}
+
+bool has_owner_conflict(const std::vector<GeometryValue>& contributions)
+{
+    std::optional<ActorId> owner;
+    for (const auto& contribution : contributions) {
+        if (!contribution.accumulation_actor_id.has_value()) {
+            continue;
+        }
+
+        if (!owner.has_value()) {
+            owner = contribution.accumulation_actor_id;
+            continue;
+        }
+
+        if (*owner != *contribution.accumulation_actor_id) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+} // namespace
 
 LiteralScalarKind literal_scalar_kind(const LiteralScalar& value) noexcept
 {
@@ -47,11 +94,13 @@ RuntimeValue RuntimeValue::empty()
     return value;
 }
 
-RuntimeValue RuntimeValue::geometry(std::string debug_label)
+RuntimeValue RuntimeValue::geometry(
+    std::string debug_label,
+    std::optional<ActorId> accumulation_actor_id)
 {
     RuntimeValue value;
     value.presence = ValuePresence::present;
-    value.payload = GeometryValue{std::move(debug_label)};
+    value.payload = GeometryValue{std::move(debug_label), std::move(accumulation_actor_id)};
     return value;
 }
 
@@ -202,10 +251,14 @@ std::size_t InputSetState::fulfilled_promised_port_count() const noexcept
 
 VirtualGeometry GeometryAggregator::aggregate(const GeometryAggregationInput& input) const
 {
+    const bool owner_conflict = has_owner_conflict(input.contributions);
     return VirtualGeometry{
         input.port,
         input.contributions,
+        owner_conflict ? std::nullopt : common_owner(input.contributions),
         false,
+        owner_conflict ? GeometryAggregationStatus::owner_conflict
+                       : GeometryAggregationStatus::aggregated,
     };
 }
 

@@ -11,6 +11,16 @@ namespace {
 
 using RuntimeStateMap = std::unordered_map<NodeId, NodeRuntimeState>;
 
+enum class GeometryOwnerCheckStatus {
+    ok,
+    conflict,
+};
+
+struct GeometryOwnerCheck {
+    GeometryOwnerCheckStatus status = GeometryOwnerCheckStatus::ok;
+    std::optional<ActorId> owner;
+};
+
 bool is_output_node(const FunctionDescriptor& function, NodeId node_id) noexcept
 {
     return function.output_node_id.has_value() && *function.output_node_id == node_id;
@@ -57,6 +67,90 @@ void append_geometry_contributions(
     }
 }
 
+GeometryOwnerCheck geometry_owner_for(const RuntimeValue& value)
+{
+    std::vector<GeometryValue> contributions;
+    append_geometry_contributions(contributions, value);
+
+    GeometryOwnerCheck check;
+    for (const auto& contribution : contributions) {
+        if (!contribution.accumulation_actor_id.has_value()) {
+            continue;
+        }
+
+        if (!check.owner.has_value()) {
+            check.owner = contribution.accumulation_actor_id;
+            continue;
+        }
+
+        if (*check.owner != *contribution.accumulation_actor_id) {
+            check.status = GeometryOwnerCheckStatus::conflict;
+            return check;
+        }
+    }
+
+    return check;
+}
+
+GeometryOwnerCheck geometry_owner_for(const std::vector<PortValue>& values)
+{
+    GeometryOwnerCheck check;
+    for (const auto& value : values) {
+        const auto value_owner = geometry_owner_for(value.value);
+        if (value_owner.status == GeometryOwnerCheckStatus::conflict) {
+            return value_owner;
+        }
+
+        if (!value_owner.owner.has_value()) {
+            continue;
+        }
+
+        if (!check.owner.has_value()) {
+            check.owner = value_owner.owner;
+            continue;
+        }
+
+        if (*check.owner != *value_owner.owner) {
+            check.status = GeometryOwnerCheckStatus::conflict;
+            return check;
+        }
+    }
+
+    return check;
+}
+
+void assign_geometry_owner(RuntimeValue& value, const ActorId& owner)
+{
+    if (auto* geometry = std::get_if<GeometryValue>(&value.payload)) {
+        if (!geometry->accumulation_actor_id.has_value()) {
+            geometry->accumulation_actor_id = owner;
+        }
+        return;
+    }
+
+    auto* collection = std::get_if<GeometryCollectionValue>(&value.payload);
+    if (collection == nullptr) {
+        return;
+    }
+
+    for (auto& contribution : collection->contributions) {
+        if (!contribution.accumulation_actor_id.has_value()) {
+            contribution.accumulation_actor_id = owner;
+        }
+    }
+}
+
+std::vector<PortValue> assign_geometry_output_owners(
+    std::vector<PortValue> outputs,
+    const ActorId& output_owner)
+{
+    for (auto& output : outputs) {
+        assign_geometry_owner(output.value, output_owner);
+    }
+
+    return outputs;
+}
+
 std::optional<RuntimeValue> merge_geometry_contributions(
     const RuntimeValue& current,
     const RuntimeValue& incoming)
@@ -69,13 +163,21 @@ std::optional<RuntimeValue> merge_geometry_contributions(
     std::vector<GeometryValue> contributions;
     append_geometry_contributions(contributions, current);
     append_geometry_contributions(contributions, incoming);
+    if (GeometryAggregator{}.aggregate(GeometryAggregationInput{"", contributions}).status
+        == GeometryAggregationStatus::owner_conflict) {
+        return std::nullopt;
+    }
+
     return RuntimeValue::geometry_collection(std::move(contributions));
 }
 
-void receive_input(NodeRuntimeState& state, const PortId& port, const RuntimeValue& value)
+GeometryOwnerCheckStatus receive_input(
+    NodeRuntimeState& state,
+    const PortId& port,
+    const RuntimeValue& value)
 {
     if (value.is_missing()) {
-        return;
+        return GeometryOwnerCheckStatus::ok;
     }
 
     auto received = state.received_inputs.find(port);
@@ -84,6 +186,10 @@ void receive_input(NodeRuntimeState& state, const PortId& port, const RuntimeVal
     } else if (auto merged = merge_geometry_contributions(received->second, value)) {
         received->second = *merged;
     } else {
+        if ((received->second.is_geometry() || received->second.is_geometry_collection())
+            && (value.is_geometry() || value.is_geometry_collection())) {
+            return GeometryOwnerCheckStatus::conflict;
+        }
         received->second = value;
     }
 
@@ -91,6 +197,8 @@ void receive_input(NodeRuntimeState& state, const PortId& port, const RuntimeVal
     if (port_state != nullptr) {
         port_state->value = received->second;
     }
+
+    return GeometryOwnerCheckStatus::ok;
 }
 
 std::unordered_map<PortId, RuntimeValue> make_input_lookup(const std::vector<PortValue>& inputs)
@@ -432,7 +540,9 @@ std::vector<ChildInvocation> child_invocations_for(
                 [](const PortValue& input) {
                     return input.port == "input";
                 });
-            item_input->value = RuntimeValue::geometry(collection->contributions[i].debug_label);
+            item_input->value = RuntimeValue::geometry(
+                collection->contributions[i].debug_label,
+                collection->contributions[i].accumulation_actor_id);
             auto instance_key_input = std::find_if(
                 item_inputs.begin(),
                 item_inputs.end(),
@@ -546,26 +656,31 @@ std::vector<InstructionFailure> unhandled_failures(
     return result.failures;
 }
 
-void emit_else_outputs_for_failures(
+GeometryOwnerCheckStatus emit_else_outputs_for_failures(
     const GraphIndex& index,
     const InstructionResult& result,
     RuntimeStateMap& states)
 {
     if (result.failures.empty() || !has_else_route(index, result.node_id)) {
-        return;
+        return GeometryOwnerCheckStatus::ok;
     }
 
     for (const auto& failure : result.failures) {
         const PortValue else_output{"else", failure_context_value(failure)};
         for (const auto* edge : index.outgoing_edges(result.node_id)) {
             if (edge->from_port == "else") {
-                receive_input(states[edge->to_node], edge->to_port, else_output.value);
+                if (receive_input(states[edge->to_node], edge->to_port, else_output.value)
+                    == GeometryOwnerCheckStatus::conflict) {
+                    return GeometryOwnerCheckStatus::conflict;
+                }
             }
         }
     }
+
+    return GeometryOwnerCheckStatus::ok;
 }
 
-void propagate_outputs(
+GeometryOwnerCheckStatus propagate_outputs(
     const GraphIndex& index,
     const InstructionResult& result,
     RuntimeStateMap& states)
@@ -577,10 +692,15 @@ void propagate_outputs(
 
         for (const auto* edge : index.outgoing_edges(result.node_id)) {
             if (edge->from_port == output.port) {
-                receive_input(states[edge->to_node], edge->to_port, output.value);
+                if (receive_input(states[edge->to_node], edge->to_port, output.value)
+                    == GeometryOwnerCheckStatus::conflict) {
+                    return GeometryOwnerCheckStatus::conflict;
+                }
             }
         }
     }
+
+    return GeometryOwnerCheckStatus::ok;
 }
 
 std::vector<PortValue> collect_outputs(
@@ -721,6 +841,11 @@ std::string format_failure_summary(const std::vector<InstructionFailure>& failur
         stream << ": " << failures.front().message;
     }
     return stream.str();
+}
+
+bool trace_level_includes(ExecutionTraceLevel actual, ExecutionTraceLevel required) noexcept
+{
+    return static_cast<int>(actual) >= static_cast<int>(required);
 }
 
 } // namespace
@@ -864,6 +989,26 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
         });
     }
 
+    std::optional<std::size_t> current_scope_index = request.parent_scope_index;
+    if (request.scope_trace_sink != nullptr
+        && trace_level_includes(request.trace_level, ExecutionTraceLevel::scope)) {
+        const auto* current_frame = call_stack.current();
+        FunctionExecutionScopeRecord scope;
+        scope.function_id = function.id;
+        scope.function = &function;
+        scope.call_path = request.context.call_path;
+        scope.actor_id = current_actor_id;
+        scope.generates_actor = function.generates_actor;
+        if (current_frame != nullptr) {
+            scope.caller_node_id = current_frame->caller_node_id;
+        }
+        scope.parent_scope_index = request.parent_scope_index;
+        scope.inputs = request.inputs;
+        scope.input_defaults = request.input_defaults;
+        scope.global_seed = request.context.global_seed;
+        current_scope_index = request.scope_trace_sink->record_scope(std::move(scope));
+    }
+
     RuntimeStateMap states;
     for (const auto& instruction : function.instructions) {
         NodeRuntimeState state;
@@ -897,9 +1042,25 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
         for (const auto& input_port : instruction.input_ports) {
             const auto input = function_inputs.find(input_port.id);
             if (input != function_inputs.end()) {
-                receive_input(state, input_port.id, input->second);
+                if (receive_input(state, input_port.id, input->second)
+                    == GeometryOwnerCheckStatus::conflict) {
+                    execution_result.status = FunctionExecutionStatus::failed;
+                    execution_result.failure_message =
+                        "Geometry inputs from different actor owners cannot be merged.";
+                    break;
+                }
             }
         }
+
+        if (execution_result.status != FunctionExecutionStatus::completed) {
+            break;
+        }
+    }
+
+    if (execution_result.status != FunctionExecutionStatus::completed) {
+        execution_result.node_states = ordered_states(function, states);
+        execution_result.actor = actor;
+        return execution_result;
     }
 
     while (true) {
@@ -934,6 +1095,17 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
         auto& state = states[node_id];
         state.state = InstructionState::executing;
 
+        if (request.instruction_trace_sink != nullptr
+            && trace_level_includes(request.trace_level, ExecutionTraceLevel::instruction)) {
+            request.instruction_trace_sink->record_instruction(FunctionExecutionInstructionRecord{
+                function.id,
+                request.context.call_path,
+                node_id,
+                instruction->kind,
+                current_actor_id,
+            });
+        }
+
         SeedDerivationInput seed_input;
         seed_input.global_seed = request.context.global_seed;
         seed_input.call_path = request.context.call_path;
@@ -949,7 +1121,20 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
         frame.multiplex_seed_mode = instruction->multiplex_seed_mode;
 
         InstructionResult instruction_result;
-        if (instruction->called_function_id.has_value()) {
+        bool geometry_owner_conflict = false;
+        const auto input_owner_check = geometry_owner_for(frame.inputs.promised_inputs);
+        if (input_owner_check.status == GeometryOwnerCheckStatus::conflict) {
+            geometry_owner_conflict = true;
+            instruction_result.node_id = node_id;
+            instruction_result.failures.push_back(InstructionFailure{
+                node_id,
+                std::nullopt,
+                "Geometry inputs from different actor owners cannot be merged.",
+                frame.inputs.promised_inputs,
+                frame.call_stack,
+            });
+            instruction_result.failure_message = instruction_result.failures.front().message;
+        } else if (instruction->called_function_id.has_value()) {
             if (function_library_ == nullptr) {
                 state.state = InstructionState::completed;
                 execution_result.status = FunctionExecutionStatus::invalid_request;
@@ -1013,6 +1198,10 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                 child_request.context.call_path = child_invocation.call_path;
                 child_request.context.global_seed = request.context.global_seed;
                 child_request.call_stack = child_stack;
+                child_request.trace_level = request.trace_level;
+                child_request.scope_trace_sink = request.scope_trace_sink;
+                child_request.instruction_trace_sink = request.instruction_trace_sink;
+                child_request.parent_scope_index = current_scope_index;
 
                 const auto child_result = run(child_request);
                 if (child_result.status == FunctionExecutionStatus::completed
@@ -1080,12 +1269,40 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
             instruction_result = (*handler)(frame);
         }
         instruction_result.node_id = node_id;
+        const auto output_owner = function.generates_actor
+            ? current_actor_id
+            : input_owner_check.owner.value_or(current_actor_id);
+        instruction_result.produced_outputs = assign_geometry_output_owners(
+            std::move(instruction_result.produced_outputs),
+            output_owner);
         normalize_failures(instruction_result, frame);
 
         state.state = InstructionState::completed;
 
-        propagate_outputs(index, instruction_result, states);
-        emit_else_outputs_for_failures(index, instruction_result, states);
+        if (propagate_outputs(index, instruction_result, states)
+            == GeometryOwnerCheckStatus::conflict) {
+            geometry_owner_conflict = true;
+            instruction_result.failures.push_back(InstructionFailure{
+                node_id,
+                std::nullopt,
+                "Geometry outputs from different actor owners cannot be merged.",
+                frame.inputs.promised_inputs,
+                frame.call_stack,
+            });
+            instruction_result.failure_message = instruction_result.failures.back().message;
+        }
+        if (emit_else_outputs_for_failures(index, instruction_result, states)
+            == GeometryOwnerCheckStatus::conflict) {
+            geometry_owner_conflict = true;
+            instruction_result.failures.push_back(InstructionFailure{
+                node_id,
+                std::nullopt,
+                "Geometry else outputs from different actor owners cannot be merged.",
+                frame.inputs.promised_inputs,
+                frame.call_stack,
+            });
+            instruction_result.failure_message = instruction_result.failures.back().message;
+        }
 
         if (!instruction_result.failures.empty()) {
             execution_result.failures.insert(
@@ -1095,6 +1312,12 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
         }
 
         const auto unhandled = unhandled_failures(index, *instruction, instruction_result);
+        if (geometry_owner_conflict) {
+            execution_result.status = FunctionExecutionStatus::failed;
+            execution_result.failure_message = instruction_result.failure_message;
+            break;
+        }
+
         if (!unhandled.empty()) {
             execution_result.status = FunctionExecutionStatus::failed;
             execution_result.failure_message = format_failure_summary(unhandled);
@@ -1141,6 +1364,24 @@ std::string to_string(FunctionExecutionStatus status)
         return "deadlocked";
     case FunctionExecutionStatus::failed:
         return "failed";
+    }
+
+    return "unknown";
+}
+
+std::string to_string(ExecutionTraceLevel level)
+{
+    switch (level) {
+    case ExecutionTraceLevel::none:
+        return "none";
+    case ExecutionTraceLevel::scope:
+        return "scope";
+    case ExecutionTraceLevel::instruction:
+        return "instruction";
+    case ExecutionTraceLevel::item:
+        return "item";
+    case ExecutionTraceLevel::value:
+        return "value";
     }
 
     return "unknown";

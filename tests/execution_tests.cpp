@@ -127,6 +127,25 @@ bool output_has_geometry_collection_labels(
     return false;
 }
 
+bool output_geometry_has_owner(
+    const phoenix::FunctionExecutionResult& result,
+    const char* port,
+    const char* owner)
+{
+    for (const auto& output : result.outputs) {
+        if (output.port != port) {
+            continue;
+        }
+
+        const auto* geometry = output.value.as_geometry();
+        return geometry != nullptr
+            && geometry->accumulation_actor_id.has_value()
+            && *geometry->accumulation_actor_id == owner;
+    }
+
+    return false;
+}
+
 bool node_state_is(
     const phoenix::FunctionExecutionResult& result,
     phoenix::NodeId node_id,
@@ -1503,6 +1522,189 @@ bool test_actor_generating_nested_function_creates_child_actor()
         && !first.actor->children.front().geometry.has_value();
 }
 
+bool test_child_actor_geometry_keeps_owner_after_return_to_parent_graph()
+{
+    FunctionDescriptor child;
+    child.id = "owned-child";
+    child.generates_actor = true;
+    child.output_ports = {make_output_port("result", "geometry")};
+    child.instructions = {
+        make_instruction(
+            7,
+            "child_owned_source",
+            {},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    child.edges = {EdgeDescriptor{7, "output", 99, "result"}};
+    child.output_node_id = 99;
+
+    FunctionDescriptor parent;
+    parent.id = "owned-parent";
+    parent.output_ports = {make_output_port("result", "geometry")};
+    auto call_child = make_instruction(
+        2,
+        "call",
+        {},
+        {make_output_port("result", "geometry")});
+    call_child.called_function_id = child.id;
+    parent.instructions = {
+        call_child,
+        make_instruction(
+            3,
+            "parent_operates_on_child_geometry",
+            {make_input_port("input", "geometry")},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    parent.edges = {
+        EdgeDescriptor{2, "result", 3, "input"},
+        EdgeDescriptor{3, "output", 99, "result"},
+    };
+    parent.output_node_id = 99;
+
+    std::optional<phoenix::ActorId> seen_input_owner;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "child_owned_source",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("child-owned")}},
+                std::nullopt,
+            };
+        });
+    registry.register_handler(
+        "parent_operates_on_child_geometry",
+        [&seen_input_owner](const phoenix::InstructionExecutionFrame& frame) {
+            const auto* input = find_input(frame, "input");
+            const auto* geometry = input == nullptr ? nullptr : input->as_geometry();
+            if (geometry != nullptr) {
+                seen_input_owner = geometry->accumulation_actor_id;
+            }
+
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("parent-op-result")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionLibrary functions;
+    functions.register_function(parent);
+    functions.register_function(child);
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &parent;
+    request.context.function_id = parent.id;
+    request.context.call_path = {"root"};
+
+    const phoenix::FunctionExecutor executor(registry, functions);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && result.actor.has_value()
+        && result.actor->children.size() == 1
+        && seen_input_owner.has_value()
+        && *seen_input_owner == "actor:root:2:owned-child"
+        && output_has_geometry_label(result, "result", "parent-op-result")
+        && output_geometry_has_owner(result, "result", "actor:root:2:owned-child");
+}
+
+bool test_cross_actor_geometry_merge_fails()
+{
+    FunctionDescriptor child;
+    child.id = "merge-child";
+    child.generates_actor = true;
+    child.output_ports = {make_output_port("result", "geometry")};
+    child.instructions = {
+        make_instruction(
+            7,
+            "merge_child_source",
+            {},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    child.edges = {EdgeDescriptor{7, "output", 99, "result"}};
+    child.output_node_id = 99;
+
+    FunctionDescriptor parent;
+    parent.id = "cross-actor-merge-parent";
+    auto first_call = make_instruction(
+        2,
+        "call_first",
+        {},
+        {make_output_port("result", "geometry")});
+    first_call.called_function_id = child.id;
+    auto second_call = make_instruction(
+        3,
+        "call_second",
+        {},
+        {make_output_port("result", "geometry")});
+    second_call.called_function_id = child.id;
+    parent.instructions = {
+        first_call,
+        second_call,
+        make_instruction(
+            4,
+            "merge_cross_actor_geometry",
+            {make_input_port("input", "geometry")},
+            {make_output_port("output", "geometry")}),
+    };
+    parent.edges = {
+        EdgeDescriptor{2, "result", 4, "input"},
+        EdgeDescriptor{3, "result", 4, "input"},
+    };
+
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "merge_child_source",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("child-owned")}},
+                std::nullopt,
+            };
+        });
+    registry.register_handler(
+        "merge_cross_actor_geometry",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("should-not-run")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionLibrary functions;
+    functions.register_function(parent);
+    functions.register_function(child);
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &parent;
+    request.context.function_id = parent.id;
+    request.context.call_path = {"root"};
+
+    const phoenix::FunctionExecutor executor(registry, functions);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::failed
+        && result.failure_message.has_value()
+        && result.failure_message->find("different actor owners") != std::string::npos;
+}
+
 bool test_multiplexed_actor_generating_call_creates_child_actor_per_item()
 {
     FunctionDescriptor child;
@@ -1916,6 +2118,8 @@ int main()
     ok = run_test("top-level execution creates root actor", test_top_level_execution_creates_root_actor) && ok;
     ok = run_test("non-actor nested function inherits actor context", test_non_actor_nested_function_inherits_actor_context) && ok;
     ok = run_test("actor-generating nested function creates child actor", test_actor_generating_nested_function_creates_child_actor) && ok;
+    ok = run_test("child actor geometry keeps owner after return to parent graph", test_child_actor_geometry_keeps_owner_after_return_to_parent_graph) && ok;
+    ok = run_test("cross actor geometry merge fails", test_cross_actor_geometry_merge_fails) && ok;
     ok = run_test("multiplexed actor-generating call creates child actor per item", test_multiplexed_actor_generating_call_creates_child_actor_per_item) && ok;
     ok = run_test("multiplexed actor generation routes failed item without actor", test_multiplexed_actor_generation_routes_failed_item_without_actor) && ok;
     ok = run_test("instancing reuses actor generation for matching explicit keys", test_instancing_reuses_actor_generation_for_matching_explicit_keys) && ok;

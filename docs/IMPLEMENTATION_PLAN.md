@@ -143,6 +143,9 @@ Current status:
 - runtime values distinguish missing, empty, present, and defaulted states
 - literal values, geometry wrappers, port fulfillment, and virtual geometry
   aggregation scaffolding are implemented
+- geometry values now carry optional actor accumulation ownership
+- virtual geometry aggregation reports cross-actor owner conflicts instead of
+  treating incompatible contributions as one payload
 
 ## Phase 4: Implement Deterministic Execution Core
 
@@ -329,6 +332,9 @@ Remaining Phase 7 work:
 - implement concrete transform and pivot behavior
 - define actor-local geometry payload and accumulation rules after geometry
   representation is settled
+- connect owned geometry values to the eventual concrete actor-local geometry
+  payload representation
+- define explicit ownership-changing operations, if any are needed
 - define actor naming policy
 - refine actor id policy for later partial-rerun retention
 - decide how actor outputs interact with parent-side graph dependencies
@@ -418,13 +424,61 @@ Current status:
 - scene subtree replacement preserves unaffected ancestor and sibling ids and
   ordering
 - root actor replacement is supported for full-root rerun/update cases
+- `PartialRerunApplier` can apply a cached actor subtree to a scene through
+  `SceneUpdater`
+- partial rerun application distinguishes cache-miss rerun requirements,
+  missing planned cache entries, invalid requests, and scene update failures
+- cache-miss application can optionally run a supplied `FunctionExecutor`
+  request and apply the returned actor subtree to the scene
+- the first executor-backed rerun path reruns a full function scope, not a
+  minimal dirty-instruction subgraph
+- `PartialRerunScopeResolver` can turn a known dirty actor/function scope into
+  a `FunctionExecutionRequest`
+- scope resolution binds the execution request to the target actor id and call
+  path so the rerun result can replace the intended scene subtree
+- `PartialRerunScopeIndex` records known executed function scopes with function
+  id, call path, actor id, parent scope, inputs, defaults, and seed
+- scope-index lookup can find scopes by actor id, exact call path, and nearest
+  actor-owning scope for a dirty call path
+- non-actor nested functions resolve to the nearest owning actor scope rather
+  than becoming independent rerun subtrees
+- `FunctionExecutor` can optionally populate a scope trace sink as function
+  invocations run
+- executor trace population records root scopes, nested actor scopes, non-actor
+  helper scopes, and multiplexed actor item scopes
+- execution tracing now has explicit levels:
+  - `none`
+  - `scope`
+  - `instruction`
+  - `item`
+  - `value`
+- `FunctionExecutor` emits scope records only at `scope` level and above
+- `FunctionExecutor` emits compact instruction records only at `instruction`
+  level and above
+- `PartialRerunInstructionIndex` stores one compact record per instruction
+  execution and supports indexed lookup by function/node and call-path/node
+- `PartialRerunScopeDiscovery` connects a dirty call path to the nearest
+  actor-owning scope in the scope index
+- discovered scopes can be materialized as `PartialRerunScopeRequest` values
+  for the existing resolver/executor-rerun path
+- `PartialRerunDirtyInstructionDiscovery` connects a dirty function/node pair to
+  the compact instruction trace index and then discovers every affected
+  actor-owning rerun scope
+- dirty instruction discovery handles multiple executed call paths for the same
+  function/node, dedupes repeated traces by call path, and preserves partial
+  discovery results for diagnostics
+- scope discovery can promote a dirty child actor scope to the nearest parent
+  actor scope when invalidation requires parent propagation
+- parent-actor scope lookup is based on recorded scope ancestry rather than
+  parsing call-path strings
 
 Remaining Phase 9 work:
 
-- map dirty function calls to affected actor subtree scopes
+- surface changed instruction identity from editor/diagnostics into dirty
+  instruction discovery
+- define and implement `item` and `value` trace payload policies
 - define geometry-only scene patch operations once geometry payloads settle
-- propagate dirty scope across parent/child function boundaries
-- integrate partial rerun plans into executor/scene update behavior
+- define minimal dirty-instruction/subgraph execution within a rerun scope
 
 ## Phase 10: Implement Caching
 

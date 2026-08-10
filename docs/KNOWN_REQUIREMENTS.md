@@ -51,6 +51,8 @@ can be made with the full context available.
 - Ports are named and typed.
 - Geometry inputs may accept multiple upstream geometry contributions.
 - Multiple geometry contributions can be treated as a virtual mesh.
+- Geometry contributions with different actor ownership must not be merged as
+  one geometry payload.
 - Non-geometry ports are typed.
 - Arrays should be supported as types.
 - Version one should support at least basic literal values.
@@ -172,9 +174,18 @@ can be made with the full context available.
   the current actor.
 - Geometry produced inside an inner actor-generating function belongs to that
   child actor.
+- Generated geometry that leaves an actor-generating function keeps that actor
+  as its accumulation owner.
+- An actor's geometry can be extended by downstream operations acting on that
+  actor's function outputs.
+- Operations on actor-owned geometry continue accumulating results on that
+  geometry's owning actor, even when the operation runs after returning to the
+  caller graph.
 - Non-actor-generating functions may still produce geometry.
-- Geometry produced outside a child actor function still accumulates into the
-  current actor geometry.
+- Geometry that has no existing actor owner accumulates into the current actor
+  context naturally.
+- Combining geometry from different actor owners is invalid unless a later
+  explicit ownership-changing operation defines otherwise.
 - The concrete actor-local geometry payload representation is deferred until
   the geometry model is settled.
 - Actor hierarchy is purely structural in version one.
@@ -250,6 +261,30 @@ can be made with the full context available.
   result.
 - Structural actor subtree replacement can be implemented before geometry-only
   patching, because it only depends on actor identity and hierarchy.
+- Cache-backed partial rerun application should recheck cache availability at
+  apply time before mutating the scene.
+- Executor-backed partial rerun application may start by rerunning a full
+  function scope for the affected actor before minimal dirty-node rerun exists.
+- Rerun scope resolution may start from known function, call path, input, and
+  actor id data before fully automatic dirty-scope discovery exists.
+- Partial rerun scope lookup must account for non-actor nested functions by
+  resolving them to their nearest actor-owning scope.
+- Function execution should be able to emit scope trace records so partial rerun
+  discovery can use actual executed function/actor ownership.
+- Execution tracing must be level-controlled so large graphs and multiplexed
+  operations do not always pay for detailed item/value diagnostics.
+- Compact instruction tracing should record instruction identity and ownership
+  without copying inputs, outputs, failures, items, or geometry payloads.
+- Dirty call paths should resolve through the scope index to the nearest
+  actor-owning scope before an executor rerun request is built.
+- Dirty instruction discovery must account for one function/node being executed
+  at multiple call paths and may produce multiple actor rerun scopes.
+- Dirty instruction discovery should preserve partial success: resolvable call
+  paths can produce rerun scopes while unresolved paths remain available for
+  diagnostics.
+- When invalidation requires parent propagation, dirty scope discovery should
+  promote an affected child actor scope to the nearest parent actor scope so
+  parent-side dependent work can be recomputed.
 - If only geometry changes and hierarchy does not, only the geometry payload
   should be replaced.
 - Unaffected sibling actor ids must remain stable across partial reruns.

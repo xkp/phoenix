@@ -141,6 +141,10 @@ However, the execution model assumes:
 - geometry can be passed as a single runtime value
 - multiple geometry inputs may be logically compounded into a virtual mesh
 - multiplexing may also process geometry item-by-item
+- geometry values may carry an actor accumulation owner once actor generation is
+  active
+- geometry values with different actor accumulation owners must not be merged as
+  one payload
 
 The exact container type is an implementation concern.
 
@@ -155,6 +159,11 @@ Rules:
 - arrays are valid types
 - geometry inputs may accept multiple upstream geometry contributions that are
   treated as one virtual geometry input at execution time
+
+That virtual geometry input is valid only when the contributions share one
+actor accumulation owner, or when they are unowned and will naturally accumulate
+on the current actor context. Contributions from different actor owners are not
+implicitly mergeable.
 
 Output node ports are named. Output order does not matter.
 
@@ -451,8 +460,19 @@ instructions accumulates into the current actor.
 When an inner actor-generating function runs, geometry produced inside that
 function belongs to the child actor created by that function.
 
-Geometry produced outside the child actor function continues to accumulate into
-the current parent actor.
+Generated geometry that leaves an actor-generating function keeps that child
+actor as its accumulation owner. If later instructions in the caller graph
+operate on that actor-owned geometry, the resulting geometry still accumulates
+on the owning child actor, not on the caller's current actor. This prevents
+inner actor geometry from merging into parent actor geometry just because
+control has returned to the caller graph.
+
+Said another way: an actor's geometry can be extended by downstream operations
+acting on that actor's function outputs.
+
+Geometry with no existing actor owner accumulates into the current actor
+context naturally. Combining geometry from different actor owners is invalid
+unless a later explicit ownership-changing operation defines otherwise.
 
 The concrete runtime representation for actor-local geometry accumulation is
 deferred until the geometry payload model is settled.
@@ -572,6 +592,66 @@ by actor id. Replacing a subtree preserves unaffected ancestors and siblings,
 including their ids and sibling order. Replacing the root actor is also valid
 when the rerun scope is the whole scene root. Geometry-only patching remains
 deferred until the concrete actor geometry payload model is settled.
+
+Partial rerun application first supports the cache-backed case. If a partial
+rerun plan reports an actor-subtree cache hit, the applier rechecks that cache
+entry at apply time and replaces the matching scene subtree through the scene
+updater. If no usable cached subtree exists, the applier reports that rerun work
+is required and leaves the scene unchanged.
+
+The first executor-backed partial rerun path may rerun a supplied full function
+execution request for the affected actor scope. If execution completes and
+returns an actor, that actor is applied as the replacement subtree. If execution
+fails, the prior scene remains unchanged in this slice. Minimal dirty-node
+subgraph execution remains a later refinement.
+
+Rerun scope resolution starts from known scope data. Given a partial rerun plan,
+the affected function descriptor, function inputs/defaults, call path, and
+target actor id, the resolver builds the full `FunctionExecutionRequest` needed
+by the executor-backed rerun path.
+
+The scope index records executed function scopes and their actor ownership. It
+can find a scope by actor id, by exact call path, or by the nearest
+actor-owning scope for a dirty call path. Non-actor nested functions resolve to
+their nearest actor-owning ancestor, because the rerun unit remains an actor
+subtree.
+
+The executor can optionally populate a scope trace sink while it runs. Scope
+records include the invoked function, call path, actor id, parent scope index,
+inputs, input defaults, and global seed. This produces a scope index for the
+completed run without making partial rerun code part of the executor itself.
+
+Execution tracing is level-controlled:
+
+- `none`: no trace records
+- `scope`: function/actor scope records
+- `instruction`: compact instruction execution records
+- `item`: reserved for multiplex item records without payload copies
+- `value`: reserved for selected value/input/output diagnostics
+
+Compact instruction records include function id, call path, node id,
+instruction kind, and actor id. They intentionally do not include inputs,
+outputs, failures, item payloads, or geometry payloads. This keeps ordinary
+partial-rerun discovery practical for large graphs and multiplex-heavy runs.
+
+Given a dirty call path, scope discovery queries the scope index for the nearest
+actor-owning scope and produces the scope-resolution request needed for a
+rerun. If a cached actor subtree is already available, discovery can report that
+no executor scope resolution is required.
+
+Dirty instruction discovery starts from a changed function/node pair and uses
+the compact instruction index to find every executed call path for that
+instruction. Each unique call path is resolved through scope discovery, so one
+changed instruction can produce multiple actor rerun scopes when the same
+function was invoked multiple times or through multiplexing. Partial discovery
+is valid: resolvable call paths can produce rerun requests while unresolved
+paths remain available for diagnostics.
+
+If invalidation reports that parent-side propagation is required, scope
+discovery promotes the affected child actor scope to the nearest parent actor
+scope using recorded scope ancestry. This keeps parent-side dependent work from
+being left stale after an inner actor change. If no parent actor exists, the
+original discovered scope remains the rerun scope.
 
 ### 13.4 Failure During Partial Rerun
 

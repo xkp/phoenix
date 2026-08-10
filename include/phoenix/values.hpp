@@ -18,6 +18,7 @@ struct DefaultValue final {
 
 struct GeometryValue {
     std::string debug_label;
+    std::optional<ActorId> accumulation_actor_id;
 };
 
 struct GeometryCollectionValue {
@@ -50,7 +51,9 @@ struct RuntimeValue {
 
     [[nodiscard]] static RuntimeValue missing();
     [[nodiscard]] static RuntimeValue empty();
-    [[nodiscard]] static RuntimeValue geometry(std::string debug_label);
+    [[nodiscard]] static RuntimeValue geometry(
+        std::string debug_label,
+        std::optional<ActorId> accumulation_actor_id = std::nullopt);
     [[nodiscard]] static RuntimeValue geometry_collection(std::vector<GeometryValue> contributions);
     [[nodiscard]] static RuntimeValue literal(LiteralValue value);
     [[nodiscard]] static RuntimeValue defaulted(TypeId source_type);
@@ -113,10 +116,17 @@ struct GeometryAggregationInput {
     std::vector<GeometryValue> contributions;
 };
 
+enum class GeometryAggregationStatus {
+    aggregated,
+    owner_conflict,
+};
+
 struct VirtualGeometry {
     PortId port;
     std::vector<GeometryValue> contributions;
+    std::optional<ActorId> accumulation_actor_id;
     bool materialized = false;
+    GeometryAggregationStatus status = GeometryAggregationStatus::aggregated;
 };
 
 class GeometryAggregator {
