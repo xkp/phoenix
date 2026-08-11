@@ -1,6 +1,8 @@
 #include "phoenix/execution.hpp"
 
 #include <algorithm>
+#include <future>
+#include <set>
 #include <sstream>
 #include <unordered_set>
 #include <utility>
@@ -197,6 +199,7 @@ GeometryOwnerCheckStatus receive_input(
     if (port_state != nullptr) {
         port_state->value = received->second;
     }
+    ++state.received_input_counts[port];
 
     return GeometryOwnerCheckStatus::ok;
 }
@@ -230,30 +233,30 @@ std::unordered_set<PortId> default_ports_for(
     return defaults;
 }
 
-std::unordered_set<PortId> promised_port_ids_for(
+std::unordered_map<PortId, std::size_t> promised_port_counts_for(
     const FunctionDescriptor& function,
     const GraphIndex& index,
     const InstructionDescriptor& instruction,
     const std::unordered_map<PortId, RuntimeValue>& function_inputs,
     const std::unordered_map<NodeId, std::vector<PortValue>>& input_defaults)
 {
-    std::unordered_set<PortId> promised;
+    std::unordered_map<PortId, std::size_t> promised;
 
     for (const auto* edge : index.incoming_edges(instruction.id)) {
-        promised.insert(edge->to_port);
+        ++promised[edge->to_port];
     }
 
     for (const auto& input_port : instruction.input_ports) {
         if (index.incoming_edges(instruction.id).empty()
             && function_inputs.find(input_port.id) != function_inputs.end()
             && !is_output_node(function, instruction.id)) {
-            promised.insert(input_port.id);
+            promised[input_port.id] = std::max<std::size_t>(promised[input_port.id], 1);
         }
     }
 
     for (const auto& port : default_ports_for(instruction.id, input_defaults)) {
         if (find_input_port(instruction, port) != nullptr) {
-            promised.insert(port);
+            promised[port] = std::max<std::size_t>(promised[port], 1);
         }
     }
 
@@ -263,7 +266,19 @@ std::unordered_set<PortId> promised_port_ids_for(
 bool all_promised_fulfilled(const NodeRuntimeState& state)
 {
     for (const auto& port : state.input_ports) {
-        if (port.is_promised() && !port.is_fulfilled()) {
+        if (!port.is_promised()) {
+            continue;
+        }
+
+        const auto promised_count = state.promised_input_counts.find(port.port);
+        const auto received_count = state.received_input_counts.find(port.port);
+        const auto expected = promised_count == state.promised_input_counts.end()
+            ? std::size_t{1}
+            : promised_count->second;
+        const auto received = received_count == state.received_input_counts.end()
+            ? std::size_t{0}
+            : received_count->second;
+        if (received < expected || !port.is_fulfilled()) {
             return false;
         }
     }
@@ -274,7 +289,11 @@ bool all_promised_fulfilled(const NodeRuntimeState& state)
 bool any_promised_fulfilled(const NodeRuntimeState& state)
 {
     for (const auto& port : state.input_ports) {
-        if (port.is_promised() && port.is_fulfilled()) {
+        const auto received_count = state.received_input_counts.find(port.port);
+        if (port.is_promised()
+            && received_count != state.received_input_counts.end()
+            && received_count->second > 0
+            && port.is_fulfilled()) {
             return true;
         }
     }
@@ -317,6 +336,47 @@ std::vector<NodeId> ready_nodes(const FunctionDescriptor& function, const Runtim
     std::sort(ready.begin(), ready.end());
     return ready;
 }
+
+class ReadyFrontier {
+public:
+    void sync(const FunctionDescriptor& function, const RuntimeStateMap& states)
+    {
+        frontier_.clear();
+        for (const auto node_id : ready_nodes(function, states)) {
+            frontier_.insert(node_id);
+        }
+    }
+
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return frontier_.empty();
+    }
+
+    void push(NodeId node_id)
+    {
+        frontier_.insert(node_id);
+    }
+
+    [[nodiscard]] std::optional<NodeId> pop_next()
+    {
+        if (frontier_.empty()) {
+            return std::nullopt;
+        }
+
+        const auto it = frontier_.begin();
+        const auto node_id = *it;
+        frontier_.erase(it);
+        return node_id;
+    }
+
+    [[nodiscard]] std::vector<NodeId> nodes() const
+    {
+        return {frontier_.begin(), frontier_.end()};
+    }
+
+private:
+    std::set<NodeId> frontier_;
+};
 
 bool has_pending_predecessor(
     NodeId node_id,
@@ -753,11 +813,6 @@ std::string prototype_id_for(
     return stream.str();
 }
 
-void merge_child_actors(ActorNode& target, const ActorNode& source)
-{
-    target.children.insert(target.children.end(), source.children.begin(), source.children.end());
-}
-
 void publish_instruction_cache_entry(
     CacheWriter* cache_writer,
     const CacheIdentity& cache_identity,
@@ -809,6 +864,719 @@ void publish_function_cache_entries(
     subtree_entry.key = key_builder.actor_subtree(subtree_key_input);
     subtree_entry.actor = *result.actor;
     cache_writer->put_actor_subtree(std::move(subtree_entry));
+}
+
+struct InstructionPublicationInput {
+    const GraphIndex* index = nullptr;
+    const FunctionDescriptor* function = nullptr;
+    const InstructionDescriptor* instruction = nullptr;
+    const CacheIdentity* cache_identity = nullptr;
+    CacheWriter* cache_writer = nullptr;
+    NodeId node_id = 0;
+    std::optional<SeedValue> effective_seed;
+    bool instruction_cache_hit = false;
+    std::size_t actor_child_delta_count = 0;
+    const InstructionExecutionFrame* frame = nullptr;
+    ExecutionTraceLevel trace_level = ExecutionTraceLevel::none;
+    FunctionExecutionPublicationTraceSink* publication_trace_sink = nullptr;
+};
+
+struct InstructionPublicationResult {
+    bool geometry_owner_conflict = false;
+    std::vector<InstructionFailure> unhandled_failures;
+};
+
+enum class InstructionWorkStatus {
+    completed,
+    invalid_request,
+    invalid_graph,
+    missing_handler,
+};
+
+struct InstructionWorkInput {
+    const InstructionDescriptor* instruction = nullptr;
+    const FunctionDescriptor* function = nullptr;
+    const FunctionLibrary* function_library = nullptr;
+    const InstructionRegistry* registry = nullptr;
+    const FunctionExecutor* executor = nullptr;
+    const FunctionExecutionRequest* request = nullptr;
+    const CacheIdentity* cache_identity = nullptr;
+    std::optional<std::size_t> current_scope_index;
+    ActorId current_actor_id;
+    InstructionExecutionFrame frame;
+};
+
+struct InstructionWorkResult {
+    InstructionWorkStatus status = InstructionWorkStatus::completed;
+    std::optional<std::string> failure_message;
+    InstructionResult instruction_result;
+    bool instruction_cache_hit = false;
+    GeometryOwnerCheck input_owner_check;
+    std::vector<ActorNode> actor_children;
+};
+
+struct MultiplexItemResult {
+    std::optional<std::uint64_t> item_key;
+    std::optional<std::string> instance_key;
+    std::optional<ActorPrototypeRef> prototype_ref;
+    std::vector<PortValue> produced_outputs;
+    std::vector<InstructionFailure> failures;
+    std::optional<std::string> failure_message;
+    std::vector<ActorNode> actor_children;
+};
+
+struct ClassifiedChildInvocation {
+    std::size_t invocation_index = 0;
+    bool can_instance = false;
+    std::optional<std::size_t> prototype_index;
+};
+
+struct PreparedInstructionWork {
+    const InstructionDescriptor* instruction = nullptr;
+    InstructionExecutionFrame frame;
+};
+
+struct CompletedInstructionWork {
+    const InstructionDescriptor* instruction = nullptr;
+    InstructionExecutionFrame frame;
+    InstructionWorkResult result;
+};
+
+std::optional<std::vector<PortValue>> cached_instruction_outputs(
+    const CacheStore* cache_store,
+    const CacheIdentity& cache_identity,
+    NodeId node_id,
+    std::optional<SeedValue> effective_seed);
+
+bool trace_level_includes(ExecutionTraceLevel actual, ExecutionTraceLevel required) noexcept;
+std::string format_failure_summary(const std::vector<InstructionFailure>& failures);
+MultiplexItemResult execute_child_invocation_item(
+    const InstructionWorkInput& input,
+    const FunctionDescriptor& child_function,
+    const ChildInvocation& child_invocation,
+    const ActorId& child_actor_id,
+    bool can_instance,
+    const ActorPrototypeRef* prototype_ref);
+void merge_child_invocation_item_results(
+    InstructionWorkResult& result,
+    const std::vector<MultiplexItemResult>& item_results);
+std::vector<ClassifiedChildInvocation> classify_child_invocations_for_instancing(
+    const InstructionDescriptor& instruction,
+    const FunctionDescriptor& child_function,
+    const std::vector<ChildInvocation>& child_invocations);
+MultiplexItemResult reused_instance_result_from_prototype(
+    const InstructionWorkInput& input,
+    const ChildInvocation& child_invocation,
+    const ActorId& child_actor_id,
+    const MultiplexItemResult& prototype_result);
+
+bool can_parallelize_child_invocations(
+    const InstructionWorkInput& input,
+    const InstructionDescriptor& instruction,
+    std::size_t invocation_count) noexcept;
+
+bool is_thread_eligible_instruction(
+    const FunctionExecutionRequest& request,
+    const FunctionDescriptor& function,
+    const InstructionDescriptor& instruction,
+    bool force_running) noexcept
+{
+    return !force_running
+        && !function.generates_actor
+        && !instruction.generates_actor
+        && !instruction.called_function_id.has_value()
+        && request.cache_store == nullptr
+        && request.cache_writer == nullptr;
+}
+
+bool can_parallelize_child_invocations(
+    const InstructionWorkInput& input,
+    const InstructionDescriptor& instruction,
+    std::size_t invocation_count) noexcept
+{
+    return input.request->options.worker_count > 1
+        && invocation_count > 1
+        && instruction.multiplexes_input
+        && input.request->scope_trace_sink == nullptr
+        && input.request->instruction_trace_sink == nullptr
+        && input.request->publication_trace_sink == nullptr
+        && input.request->cache_store == nullptr
+        && input.request->cache_writer == nullptr;
+}
+
+InstructionExecutionFrame make_execution_frame(
+    const FunctionExecutionRequest& request,
+    const CallStack& call_stack,
+    const NodeRuntimeState& state,
+    const InstructionDescriptor& instruction,
+    bool force_running,
+    const SeedDeriver& seed_deriver)
+{
+    SeedDerivationInput seed_input;
+    seed_input.global_seed = request.context.global_seed;
+    seed_input.call_path = request.context.call_path;
+    seed_input.node_id = instruction.id;
+    seed_input.local_seed = instruction.local_seed;
+
+    InstructionExecutionFrame frame;
+    frame.context = request.context;
+    frame.call_stack = call_stack;
+    frame.inputs = make_instruction_inputs(state, request.input_defaults, force_running);
+    frame.seed_derivation = seed_input;
+    frame.effective_seed = seed_deriver.derive(seed_input);
+    frame.multiplex_seed_mode = instruction.multiplex_seed_mode;
+    return frame;
+}
+
+void record_instruction_start(
+    const FunctionExecutionRequest& request,
+    const FunctionDescriptor& function,
+    const InstructionDescriptor& instruction,
+    const ActorId& current_actor_id)
+{
+    if (request.instruction_trace_sink == nullptr
+        || !trace_level_includes(request.trace_level, ExecutionTraceLevel::instruction)) {
+        return;
+    }
+
+    request.instruction_trace_sink->record_instruction(FunctionExecutionInstructionRecord{
+        function.id,
+        request.context.call_path,
+        instruction.id,
+        instruction.kind,
+        current_actor_id,
+    });
+}
+
+void apply_work_status(
+    FunctionExecutionResult& execution_result,
+    InstructionWorkStatus status,
+    std::optional<std::string> failure_message)
+{
+    execution_result.failure_message = std::move(failure_message);
+    switch (status) {
+    case InstructionWorkStatus::invalid_request:
+        execution_result.status = FunctionExecutionStatus::invalid_request;
+        break;
+    case InstructionWorkStatus::invalid_graph:
+        execution_result.status = FunctionExecutionStatus::invalid_graph;
+        break;
+    case InstructionWorkStatus::missing_handler:
+        execution_result.status = FunctionExecutionStatus::missing_handler;
+        break;
+    case InstructionWorkStatus::completed:
+        break;
+    }
+}
+
+InstructionPublicationResult publish_instruction_execution(
+    const InstructionPublicationInput& input,
+    InstructionResult& instruction_result,
+    RuntimeStateMap& states,
+    FunctionExecutionResult& execution_result)
+{
+    InstructionPublicationResult publication;
+    states[input.node_id].state = InstructionState::completed;
+
+    if (propagate_outputs(*input.index, instruction_result, states)
+        == GeometryOwnerCheckStatus::conflict) {
+        publication.geometry_owner_conflict = true;
+        instruction_result.failures.push_back(InstructionFailure{
+            input.node_id,
+            std::nullopt,
+            "Geometry outputs from different actor owners cannot be merged.",
+            input.frame->inputs.promised_inputs,
+            input.frame->call_stack,
+        });
+        instruction_result.failure_message = instruction_result.failures.back().message;
+    }
+    if (emit_else_outputs_for_failures(*input.index, instruction_result, states)
+        == GeometryOwnerCheckStatus::conflict) {
+        publication.geometry_owner_conflict = true;
+        instruction_result.failures.push_back(InstructionFailure{
+            input.node_id,
+            std::nullopt,
+            "Geometry else outputs from different actor owners cannot be merged.",
+            input.frame->inputs.promised_inputs,
+            input.frame->call_stack,
+        });
+        instruction_result.failure_message = instruction_result.failures.back().message;
+    }
+
+    if (!input.instruction_cache_hit
+        && !publication.geometry_owner_conflict
+        && instruction_result.failures.empty()) {
+        publish_instruction_cache_entry(
+            input.cache_writer,
+            *input.cache_identity,
+            input.node_id,
+            input.effective_seed,
+            instruction_result.produced_outputs);
+    }
+
+    if (!instruction_result.failures.empty()) {
+        execution_result.failures.insert(
+            execution_result.failures.end(),
+            instruction_result.failures.begin(),
+            instruction_result.failures.end());
+    }
+
+    publication.unhandled_failures = unhandled_failures(
+        *input.index,
+        *input.instruction,
+        instruction_result);
+
+    if (input.publication_trace_sink != nullptr
+        && trace_level_includes(input.trace_level, ExecutionTraceLevel::instruction)) {
+        input.publication_trace_sink->record_publication(FunctionExecutionPublicationRecord{
+            input.function->id,
+            input.frame->context.call_path,
+            input.node_id,
+            input.frame->call_stack.current() == nullptr
+                ? std::nullopt
+                : input.frame->call_stack.current()->actor_id,
+            instruction_result.produced_outputs.size(),
+            instruction_result.failures.size(),
+            input.actor_child_delta_count,
+            input.instruction_cache_hit,
+        });
+    }
+    return publication;
+}
+
+InstructionWorkResult execute_instruction_work(const InstructionWorkInput& input)
+{
+    InstructionWorkResult result;
+    const auto& instruction = *input.instruction;
+    const auto& frame = input.frame;
+    const auto node_id = instruction.id;
+
+    result.input_owner_check = geometry_owner_for(frame.inputs.promised_inputs);
+    if (result.input_owner_check.status == GeometryOwnerCheckStatus::conflict) {
+        result.instruction_result.node_id = node_id;
+        result.instruction_result.failures.push_back(InstructionFailure{
+            node_id,
+            std::nullopt,
+            "Geometry inputs from different actor owners cannot be merged.",
+            frame.inputs.promised_inputs,
+            frame.call_stack,
+        });
+        result.instruction_result.failure_message =
+            result.instruction_result.failures.front().message;
+        return result;
+    }
+
+    if (auto cached_outputs = cached_instruction_outputs(
+            input.request->cache_store,
+            *input.cache_identity,
+            node_id,
+            frame.effective_seed)) {
+        result.instruction_cache_hit = true;
+        result.instruction_result.node_id = node_id;
+        result.instruction_result.produced_outputs = *cached_outputs;
+        return result;
+    }
+
+    if (instruction.called_function_id.has_value()) {
+        if (input.function_library == nullptr) {
+            result.status = InstructionWorkStatus::invalid_request;
+            result.failure_message = "Function call instruction requires a function library.";
+            return result;
+        }
+
+        const auto* child_function =
+            input.function_library->find_function(*instruction.called_function_id);
+        if (child_function == nullptr) {
+            std::ostringstream stream;
+            stream << "Function call instruction references missing function '"
+                   << *instruction.called_function_id << "'.";
+            result.status = InstructionWorkStatus::invalid_graph;
+            result.failure_message = stream.str();
+            return result;
+        }
+
+        const auto path = child_call_path(
+            input.request->context,
+            instruction.id,
+            *instruction.called_function_id);
+        const auto child_invocations = child_invocations_for(
+            instruction,
+            path,
+            frame.inputs.promised_inputs);
+
+        result.instruction_result.node_id = node_id;
+        std::unordered_map<std::string, ActorPrototypeRef> prototypes_by_instance_key;
+        std::vector<MultiplexItemResult> item_results(child_invocations.size());
+        if (can_parallelize_child_invocations(input, instruction, child_invocations.size())) {
+            const auto classified_invocations = classify_child_invocations_for_instancing(
+                instruction,
+                *child_function,
+                child_invocations);
+            std::vector<std::size_t> work_indexes;
+            work_indexes.reserve(classified_invocations.size());
+            for (const auto& classified_invocation : classified_invocations) {
+                if (!classified_invocation.prototype_index.has_value()) {
+                    work_indexes.push_back(classified_invocation.invocation_index);
+                }
+            }
+
+            for (std::size_t offset = 0; offset < work_indexes.size();) {
+                std::vector<std::pair<std::size_t, std::future<MultiplexItemResult>>> futures;
+                const auto batch_size = std::min<std::size_t>(
+                    input.request->options.worker_count,
+                    work_indexes.size() - offset);
+                futures.reserve(batch_size);
+                for (std::size_t i = 0; i < batch_size; ++i) {
+                    const auto invocation_index = work_indexes[offset + i];
+                    const auto& child_invocation = child_invocations[invocation_index];
+                    const ActorId child_actor_id = child_function->generates_actor
+                        ? actor_id_from_call_path(child_invocation.call_path)
+                        : input.current_actor_id;
+                    const bool can_instance = instruction.enables_instancing
+                        && child_function->generates_actor
+                        && child_invocation.instance_key.has_value();
+                    futures.emplace_back(
+                        invocation_index,
+                        std::async(
+                            std::launch::async,
+                            [input, child_function, child_invocation, child_actor_id, can_instance]() {
+                                return execute_child_invocation_item(
+                                    input,
+                                    *child_function,
+                                    child_invocation,
+                                    child_actor_id,
+                                    can_instance,
+                                    nullptr);
+                            }));
+                }
+                for (auto& future : futures) {
+                    item_results[future.first] = future.second.get();
+                }
+                offset += batch_size;
+            }
+
+            for (const auto& classified_invocation : classified_invocations) {
+                if (!classified_invocation.prototype_index.has_value()) {
+                    continue;
+                }
+
+                const auto& child_invocation = child_invocations[classified_invocation.invocation_index];
+                const auto& prototype_result = item_results[*classified_invocation.prototype_index];
+                const ActorId child_actor_id = child_function->generates_actor
+                    ? actor_id_from_call_path(child_invocation.call_path)
+                    : input.current_actor_id;
+                item_results[classified_invocation.invocation_index] =
+                    reused_instance_result_from_prototype(
+                        input,
+                        child_invocation,
+                        child_actor_id,
+                        prototype_result);
+            }
+        } else {
+            item_results.clear();
+            item_results.reserve(child_invocations.size());
+            for (const auto& child_invocation : child_invocations) {
+                const ActorId child_actor_id = child_function->generates_actor
+                    ? actor_id_from_call_path(child_invocation.call_path)
+                    : input.current_actor_id;
+                const bool can_instance = instruction.enables_instancing
+                    && child_function->generates_actor
+                    && child_invocation.instance_key.has_value();
+                const auto prototype_it = can_instance
+                    ? prototypes_by_instance_key.find(*child_invocation.instance_key)
+                    : prototypes_by_instance_key.end();
+
+                auto item_result = execute_child_invocation_item(
+                    input,
+                    *child_function,
+                    child_invocation,
+                    child_actor_id,
+                    can_instance,
+                    prototype_it == prototypes_by_instance_key.end() ? nullptr : &prototype_it->second);
+                if (item_result.prototype_ref.has_value() && child_invocation.instance_key.has_value()) {
+                    prototypes_by_instance_key.emplace(
+                        *child_invocation.instance_key,
+                        *item_result.prototype_ref);
+                }
+                item_results.push_back(std::move(item_result));
+            }
+        }
+        merge_child_invocation_item_results(result, item_results);
+        return result;
+    }
+
+    const auto* handler = input.registry->find_handler(instruction.kind);
+    if (handler == nullptr) {
+        std::ostringstream stream;
+        stream << "No instruction handler registered for kind '" << instruction.kind << "'.";
+        result.status = InstructionWorkStatus::missing_handler;
+        result.failure_message = stream.str();
+        return result;
+    }
+
+    result.instruction_result = (*handler)(frame);
+    return result;
+}
+
+void publish_actor_deltas(ActorNode& actor, const InstructionWorkResult& work_result)
+{
+    actor.children.insert(
+        actor.children.end(),
+        work_result.actor_children.begin(),
+        work_result.actor_children.end());
+}
+
+bool commit_completed_instruction_work(
+    const GraphIndex& index,
+    const FunctionDescriptor& function,
+    const CacheIdentity& cache_identity,
+    const FunctionExecutionRequest& request,
+    const ActorId& current_actor_id,
+    CompletedInstructionWork& completed,
+    ActorNode& actor,
+    RuntimeStateMap& states,
+    FunctionExecutionResult& execution_result)
+{
+    const auto node_id = completed.instruction->id;
+    auto& state = states[node_id];
+    if (completed.result.status != InstructionWorkStatus::completed) {
+        state.state = InstructionState::completed;
+        apply_work_status(
+            execution_result,
+            completed.result.status,
+            completed.result.failure_message);
+        return false;
+    }
+
+    publish_actor_deltas(actor, completed.result);
+
+    auto& instruction_result = completed.result.instruction_result;
+    instruction_result.node_id = node_id;
+    const auto output_owner = function.generates_actor
+        ? current_actor_id
+        : completed.result.input_owner_check.owner.value_or(current_actor_id);
+    instruction_result.produced_outputs = assign_geometry_output_owners(
+        std::move(instruction_result.produced_outputs),
+        output_owner);
+    normalize_failures(instruction_result, completed.frame);
+
+    const auto publication = publish_instruction_execution(
+        InstructionPublicationInput{
+            &index,
+            &function,
+            completed.instruction,
+            &cache_identity,
+            request.cache_writer,
+            node_id,
+            completed.frame.effective_seed,
+            completed.result.instruction_cache_hit,
+            completed.result.actor_children.size(),
+            &completed.frame,
+            request.trace_level,
+            request.publication_trace_sink,
+        },
+        instruction_result,
+        states,
+        execution_result);
+
+    if (publication.geometry_owner_conflict) {
+        execution_result.status = FunctionExecutionStatus::failed;
+        execution_result.failure_message = instruction_result.failure_message;
+        return false;
+    }
+
+    if (!publication.unhandled_failures.empty()) {
+        execution_result.status = FunctionExecutionStatus::failed;
+        execution_result.failure_message =
+            format_failure_summary(publication.unhandled_failures);
+        return false;
+    }
+
+    return true;
+}
+
+std::vector<ClassifiedChildInvocation> classify_child_invocations_for_instancing(
+    const InstructionDescriptor& instruction,
+    const FunctionDescriptor& child_function,
+    const std::vector<ChildInvocation>& child_invocations)
+{
+    std::vector<ClassifiedChildInvocation> classified_invocations;
+    classified_invocations.reserve(child_invocations.size());
+
+    std::unordered_map<std::string, std::size_t> prototype_indexes;
+    for (std::size_t i = 0; i < child_invocations.size(); ++i) {
+        const auto& child_invocation = child_invocations[i];
+        ClassifiedChildInvocation classified_invocation;
+        classified_invocation.invocation_index = i;
+        classified_invocation.can_instance = instruction.enables_instancing
+            && child_function.generates_actor
+            && child_invocation.instance_key.has_value();
+
+        if (classified_invocation.can_instance) {
+            const auto [prototype_it, inserted] =
+                prototype_indexes.emplace(*child_invocation.instance_key, i);
+            if (!inserted) {
+                classified_invocation.prototype_index = prototype_it->second;
+            }
+        }
+
+        classified_invocations.push_back(classified_invocation);
+    }
+
+    return classified_invocations;
+}
+
+MultiplexItemResult reused_instance_result_from_prototype(
+    const InstructionWorkInput& input,
+    const ChildInvocation& child_invocation,
+    const ActorId& child_actor_id,
+    const MultiplexItemResult& prototype_result)
+{
+    MultiplexItemResult item_result;
+    item_result.item_key = child_invocation.item_key;
+    item_result.instance_key = child_invocation.instance_key;
+
+    if (prototype_result.prototype_ref.has_value()) {
+        ActorNode instance_actor;
+        instance_actor.id = child_actor_id;
+        instance_actor.prototype = *prototype_result.prototype_ref;
+        item_result.actor_children.push_back(std::move(instance_actor));
+        return item_result;
+    }
+
+    item_result.failures = prototype_result.failures;
+    for (auto& failure : item_result.failures) {
+        failure.node_id = input.instruction->id;
+        failure.item_key = child_invocation.item_key;
+        failure.input_context = child_invocation.inputs;
+        failure.call_stack = input.frame.call_stack;
+    }
+    item_result.failure_message = prototype_result.failure_message;
+    if (item_result.failures.empty()) {
+        item_result.failures.push_back(InstructionFailure{
+            input.instruction->id,
+            child_invocation.item_key,
+            item_result.failure_message.value_or("Instanced prototype item failed."),
+            child_invocation.inputs,
+            input.frame.call_stack,
+        });
+    }
+
+    return item_result;
+}
+
+MultiplexItemResult execute_child_invocation_item(
+    const InstructionWorkInput& input,
+    const FunctionDescriptor& child_function,
+    const ChildInvocation& child_invocation,
+    const ActorId& child_actor_id,
+    bool can_instance,
+    const ActorPrototypeRef* prototype_ref)
+{
+    MultiplexItemResult item_result;
+    item_result.item_key = child_invocation.item_key;
+    item_result.instance_key = child_invocation.instance_key;
+
+    if (can_instance && prototype_ref != nullptr) {
+        ActorNode instance_actor;
+        instance_actor.id = child_actor_id;
+        instance_actor.prototype = *prototype_ref;
+        item_result.actor_children.push_back(std::move(instance_actor));
+        return item_result;
+    }
+
+    CallStack child_stack = input.frame.call_stack;
+    child_stack.push(CallFrame{
+        *input.instruction->called_function_id,
+        child_invocation.call_path,
+        input.instruction->id,
+        child_actor_id,
+    });
+
+    FunctionExecutionRequest child_request;
+    child_request.function = &child_function;
+    child_request.inputs = child_invocation.inputs;
+    child_request.context.function_id = *input.instruction->called_function_id;
+    child_request.context.call_path = child_invocation.call_path;
+    child_request.context.global_seed = input.request->context.global_seed;
+    child_request.call_stack = child_stack;
+    child_request.trace_level = input.request->trace_level;
+    child_request.scope_trace_sink = input.request->scope_trace_sink;
+    child_request.instruction_trace_sink = input.request->instruction_trace_sink;
+    child_request.publication_trace_sink = input.request->publication_trace_sink;
+    child_request.options = input.request->options;
+    child_request.cache_store = input.request->cache_store;
+    child_request.cache_writer = input.request->cache_writer;
+    child_request.parent_scope_index = input.current_scope_index;
+
+    const auto child_result = input.executor->run(child_request);
+    if (child_result.status == FunctionExecutionStatus::completed
+        && child_result.actor.has_value()) {
+        if (child_function.generates_actor) {
+            auto child_actor = *child_result.actor;
+            if (can_instance) {
+                child_actor.prototype = ActorPrototypeRef{
+                    prototype_id_for(child_function.id, *child_invocation.instance_key),
+                };
+                item_result.prototype_ref = child_actor.prototype;
+            }
+            item_result.actor_children.push_back(std::move(child_actor));
+        } else {
+            item_result.actor_children.insert(
+                item_result.actor_children.end(),
+                child_result.actor->children.begin(),
+                child_result.actor->children.end());
+        }
+    }
+
+    item_result.produced_outputs = outputs_as_instruction_outputs(
+        input.instruction->id,
+        child_result.outputs);
+
+    if (child_result.status != FunctionExecutionStatus::completed) {
+        item_result.failures = child_result.failures;
+        if (child_result.failures.empty()) {
+            item_result.failures.push_back(InstructionFailure{
+                input.instruction->id,
+                child_invocation.item_key,
+                child_result.failure_message.value_or("Nested function call failed."),
+                child_invocation.inputs,
+                input.frame.call_stack,
+            });
+            item_result.failure_message = child_result.failure_message;
+        } else if (child_invocation.item_key.has_value()) {
+            for (auto& failure : item_result.failures) {
+                if (!failure.item_key.has_value()) {
+                    failure.item_key = child_invocation.item_key;
+                }
+            }
+        }
+    }
+
+    return item_result;
+}
+
+void merge_child_invocation_item_results(
+    InstructionWorkResult& result,
+    const std::vector<MultiplexItemResult>& item_results)
+{
+    for (const auto& item_result : item_results) {
+        result.actor_children.insert(
+            result.actor_children.end(),
+            item_result.actor_children.begin(),
+            item_result.actor_children.end());
+        result.instruction_result.produced_outputs.insert(
+            result.instruction_result.produced_outputs.end(),
+            item_result.produced_outputs.begin(),
+            item_result.produced_outputs.end());
+        result.instruction_result.failures.insert(
+            result.instruction_result.failures.end(),
+            item_result.failures.begin(),
+            item_result.failures.end());
+        if (item_result.failure_message.has_value()) {
+            result.instruction_result.failure_message = item_result.failure_message;
+        }
+    }
 }
 
 std::optional<FunctionExecutionResult> cached_function_result(
@@ -1122,12 +1890,13 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
         NodeRuntimeState state;
         state.node_id = instruction.id;
 
-        const auto promised_ports = promised_port_ids_for(
+        const auto promised_ports = promised_port_counts_for(
             function,
             index,
             instruction,
             function_inputs,
             request.input_defaults);
+        state.promised_input_counts = promised_ports;
 
         for (const auto& input_port : instruction.input_ports) {
             PortState port_state;
@@ -1171,12 +1940,14 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
         return execution_result;
     }
 
+    ReadyFrontier frontier;
+
     while (true) {
         refresh_instruction_states(function, states);
+        frontier.sync(function, states);
 
-        auto ready = ready_nodes(function, states);
         bool force_running = false;
-        if (ready.empty()) {
+        if (frontier.empty()) {
             const auto forced = force_run_candidate(function, index, states);
             if (!forced.has_value()) {
                 if (has_pending_node(states)) {
@@ -1187,268 +1958,161 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                 break;
             }
 
-            ready.push_back(*forced);
             states[*forced].state = InstructionState::ready;
+            frontier.push(*forced);
             force_running = true;
         }
 
-        const auto node_id = ready.front();
-        const auto* instruction = index.find_instruction(node_id);
-        if (instruction == nullptr) {
-            execution_result.status = FunctionExecutionStatus::invalid_graph;
-            execution_result.failure_message = "Ready node is missing from graph index.";
-            break;
-        }
-
-        auto& state = states[node_id];
-        state.state = InstructionState::executing;
-
-        if (request.instruction_trace_sink != nullptr
-            && trace_level_includes(request.trace_level, ExecutionTraceLevel::instruction)) {
-            request.instruction_trace_sink->record_instruction(FunctionExecutionInstructionRecord{
-                function.id,
-                request.context.call_path,
-                node_id,
-                instruction->kind,
-                current_actor_id,
-            });
-        }
-
-        SeedDerivationInput seed_input;
-        seed_input.global_seed = request.context.global_seed;
-        seed_input.call_path = request.context.call_path;
-        seed_input.node_id = node_id;
-        seed_input.local_seed = instruction->local_seed;
-
-        InstructionExecutionFrame frame;
-        frame.context = request.context;
-        frame.call_stack = call_stack;
-        frame.inputs = make_instruction_inputs(state, request.input_defaults, force_running);
-        frame.seed_derivation = seed_input;
-        frame.effective_seed = seed_deriver_.derive(seed_input);
-        frame.multiplex_seed_mode = instruction->multiplex_seed_mode;
-
-        InstructionResult instruction_result;
-        bool geometry_owner_conflict = false;
-        bool instruction_cache_hit = false;
-        const auto input_owner_check = geometry_owner_for(frame.inputs.promised_inputs);
-        if (input_owner_check.status == GeometryOwnerCheckStatus::conflict) {
-            geometry_owner_conflict = true;
-            instruction_result.node_id = node_id;
-            instruction_result.failures.push_back(InstructionFailure{
-                node_id,
-                std::nullopt,
-                "Geometry inputs from different actor owners cannot be merged.",
-                frame.inputs.promised_inputs,
-                frame.call_stack,
-            });
-            instruction_result.failure_message = instruction_result.failures.front().message;
-        } else if (auto cached_outputs = cached_instruction_outputs(
-                       request.cache_store,
-                       cache_identity,
-                       node_id,
-                       frame.effective_seed)) {
-            instruction_cache_hit = true;
-            instruction_result.node_id = node_id;
-            instruction_result.produced_outputs = *cached_outputs;
-        } else if (instruction->called_function_id.has_value()) {
-            if (function_library_ == nullptr) {
-                state.state = InstructionState::completed;
-                execution_result.status = FunctionExecutionStatus::invalid_request;
-                execution_result.failure_message =
-                    "Function call instruction requires a function library.";
-                break;
-            }
-
-            const auto* child_function = function_library_->find_function(*instruction->called_function_id);
-            if (child_function == nullptr) {
-                std::ostringstream stream;
-                stream << "Function call instruction references missing function '"
-                       << *instruction->called_function_id << "'.";
-                state.state = InstructionState::completed;
-                execution_result.status = FunctionExecutionStatus::invalid_graph;
-                execution_result.failure_message = stream.str();
-                break;
-            }
-
-            const auto path = child_call_path(
-                request.context,
-                instruction->id,
-                *instruction->called_function_id);
-            const auto child_invocations = child_invocations_for(
-                *instruction,
-                path,
-                frame.inputs.promised_inputs);
-
-            instruction_result.node_id = node_id;
-            std::unordered_map<std::string, ActorPrototypeRef> prototypes_by_instance_key;
-            for (const auto& child_invocation : child_invocations) {
-                const ActorId child_actor_id = child_function->generates_actor
-                    ? actor_id_from_call_path(child_invocation.call_path)
-                    : current_actor_id;
-                const bool can_instance = instruction->enables_instancing
-                    && child_function->generates_actor
-                    && child_invocation.instance_key.has_value();
-                const auto prototype_it = can_instance
-                    ? prototypes_by_instance_key.find(*child_invocation.instance_key)
-                    : prototypes_by_instance_key.end();
-                if (can_instance && prototype_it != prototypes_by_instance_key.end()) {
-                    ActorNode instance_actor;
-                    instance_actor.id = child_actor_id;
-                    instance_actor.prototype = prototype_it->second;
-                    actor.children.push_back(std::move(instance_actor));
+        std::vector<CompletedInstructionWork> completed_batch;
+        if (request.options.worker_count > 1 && !force_running) {
+            std::vector<const InstructionDescriptor*> eligible;
+            for (const auto ready_node_id : frontier.nodes()) {
+                const auto* ready_instruction = index.find_instruction(ready_node_id);
+                if (ready_instruction == nullptr) {
+                    execution_result.status = FunctionExecutionStatus::invalid_graph;
+                    execution_result.failure_message = "Ready node is missing from graph index.";
+                    break;
+                }
+                if (!is_thread_eligible_instruction(
+                        request,
+                        function,
+                        *ready_instruction,
+                        force_running)) {
                     continue;
                 }
 
-                CallStack child_stack = call_stack;
-                child_stack.push(CallFrame{
-                    *instruction->called_function_id,
-                    child_invocation.call_path,
-                    instruction->id,
-                    child_actor_id,
-                });
+                eligible.push_back(ready_instruction);
 
-                FunctionExecutionRequest child_request;
-                child_request.function = child_function;
-                child_request.inputs = child_invocation.inputs;
-                child_request.context.function_id = *instruction->called_function_id;
-                child_request.context.call_path = child_invocation.call_path;
-                child_request.context.global_seed = request.context.global_seed;
-                child_request.call_stack = child_stack;
-                child_request.trace_level = request.trace_level;
-                child_request.scope_trace_sink = request.scope_trace_sink;
-                child_request.instruction_trace_sink = request.instruction_trace_sink;
-                child_request.cache_store = request.cache_store;
-                child_request.cache_writer = request.cache_writer;
-                child_request.parent_scope_index = current_scope_index;
-
-                const auto child_result = run(child_request);
-                if (child_result.status == FunctionExecutionStatus::completed
-                    && child_result.actor.has_value()) {
-                    if (child_function->generates_actor) {
-                        auto child_actor = *child_result.actor;
-                        if (can_instance) {
-                            child_actor.prototype = ActorPrototypeRef{
-                                prototype_id_for(child_function->id, *child_invocation.instance_key),
-                            };
-                            prototypes_by_instance_key.emplace(
-                                *child_invocation.instance_key,
-                                *child_actor.prototype);
-                        }
-                        actor.children.push_back(std::move(child_actor));
-                    } else {
-                        merge_child_actors(actor, *child_result.actor);
-                    }
-                }
-
-                const auto child_outputs = outputs_as_instruction_outputs(node_id, child_result.outputs);
-                instruction_result.produced_outputs.insert(
-                    instruction_result.produced_outputs.end(),
-                    child_outputs.begin(),
-                    child_outputs.end());
-
-                if (child_result.status != FunctionExecutionStatus::completed) {
-                    const auto first_new_failure = instruction_result.failures.size();
-                    instruction_result.failures.insert(
-                        instruction_result.failures.end(),
-                        child_result.failures.begin(),
-                        child_result.failures.end());
-                    if (child_result.failures.empty()) {
-                        instruction_result.failures.push_back(InstructionFailure{
-                            node_id,
-                            child_invocation.item_key,
-                            child_result.failure_message.value_or("Nested function call failed."),
-                            child_invocation.inputs,
-                            frame.call_stack,
-                        });
-                        instruction_result.failure_message = child_result.failure_message;
-                    } else if (child_invocation.item_key.has_value()) {
-                        for (auto failure_it = instruction_result.failures.begin() + first_new_failure;
-                             failure_it != instruction_result.failures.end();
-                             ++failure_it) {
-                            auto& failure = *failure_it;
-                            if (!failure.item_key.has_value()) {
-                                failure.item_key = child_invocation.item_key;
-                            }
-                        }
-                    }
+                if (eligible.size() >= request.options.worker_count) {
+                    break;
                 }
             }
-        } else {
-            const auto* handler = registry_->find_handler(instruction->kind);
-            if (handler == nullptr) {
-                std::ostringstream stream;
-                stream << "No instruction handler registered for kind '" << instruction->kind << "'.";
-                state.state = InstructionState::completed;
-                execution_result.status = FunctionExecutionStatus::missing_handler;
-                execution_result.failure_message = stream.str();
+
+            if (execution_result.status != FunctionExecutionStatus::completed) {
                 break;
             }
 
-            instruction_result = (*handler)(frame);
+            std::vector<PreparedInstructionWork> prepared;
+            prepared.reserve(eligible.size());
+            if (eligible.size() > 1) {
+                for (const auto* ready_instruction : eligible) {
+                    auto& ready_state = states[ready_instruction->id];
+                    ready_state.state = InstructionState::executing;
+                    record_instruction_start(request, function, *ready_instruction, current_actor_id);
+                    prepared.push_back(PreparedInstructionWork{
+                        ready_instruction,
+                        make_execution_frame(
+                            request,
+                            call_stack,
+                            ready_state,
+                            *ready_instruction,
+                            force_running,
+                            seed_deriver_),
+                    });
+                }
+
+                std::vector<std::future<InstructionWorkResult>> futures;
+                futures.reserve(prepared.size());
+                for (const auto& work : prepared) {
+                    auto work_input = InstructionWorkInput{
+                        work.instruction,
+                        &function,
+                        function_library_,
+                        registry_,
+                        this,
+                        &request,
+                        &cache_identity,
+                        current_scope_index,
+                        current_actor_id,
+                        work.frame,
+                    };
+                    futures.push_back(std::async(
+                        std::launch::async,
+                        [work_input]() {
+                            return execute_instruction_work(work_input);
+                        }));
+                }
+
+                completed_batch.reserve(prepared.size());
+                for (std::size_t i = 0; i < prepared.size(); ++i) {
+                    completed_batch.push_back(CompletedInstructionWork{
+                        prepared[i].instruction,
+                        prepared[i].frame,
+                        futures[i].get(),
+                    });
+                }
+            }
         }
-        instruction_result.node_id = node_id;
-        const auto output_owner = function.generates_actor
-            ? current_actor_id
-            : input_owner_check.owner.value_or(current_actor_id);
-        instruction_result.produced_outputs = assign_geometry_output_owners(
-            std::move(instruction_result.produced_outputs),
-            output_owner);
-        normalize_failures(instruction_result, frame);
 
-        state.state = InstructionState::completed;
+        if (completed_batch.empty()) {
+            const auto next_node_id = frontier.pop_next();
+            if (!next_node_id.has_value()) {
+                execution_result.status = FunctionExecutionStatus::deadlocked;
+                execution_result.failure_message = "Ready frontier produced no executable node.";
+                break;
+            }
 
-        if (propagate_outputs(index, instruction_result, states)
-            == GeometryOwnerCheckStatus::conflict) {
-            geometry_owner_conflict = true;
-            instruction_result.failures.push_back(InstructionFailure{
-                node_id,
-                std::nullopt,
-                "Geometry outputs from different actor owners cannot be merged.",
-                frame.inputs.promised_inputs,
-                frame.call_stack,
+            const auto node_id = *next_node_id;
+            const auto* instruction = index.find_instruction(node_id);
+            if (instruction == nullptr) {
+                execution_result.status = FunctionExecutionStatus::invalid_graph;
+                execution_result.failure_message = "Ready node is missing from graph index.";
+                break;
+            }
+
+            auto& state = states[node_id];
+            state.state = InstructionState::executing;
+            record_instruction_start(request, function, *instruction, current_actor_id);
+
+            auto frame = make_execution_frame(
+                request,
+                call_stack,
+                state,
+                *instruction,
+                force_running,
+                seed_deriver_);
+
+            completed_batch.push_back(CompletedInstructionWork{
+                instruction,
+                frame,
+                execute_instruction_work(InstructionWorkInput{
+                    instruction,
+                    &function,
+                    function_library_,
+                    registry_,
+                    this,
+                    &request,
+                    &cache_identity,
+                    current_scope_index,
+                    current_actor_id,
+                    frame,
+                }),
             });
-            instruction_result.failure_message = instruction_result.failures.back().message;
         }
-        if (emit_else_outputs_for_failures(index, instruction_result, states)
-            == GeometryOwnerCheckStatus::conflict) {
-            geometry_owner_conflict = true;
-            instruction_result.failures.push_back(InstructionFailure{
-                node_id,
-                std::nullopt,
-                "Geometry else outputs from different actor owners cannot be merged.",
-                frame.inputs.promised_inputs,
-                frame.call_stack,
+
+        std::sort(
+            completed_batch.begin(),
+            completed_batch.end(),
+            [](const CompletedInstructionWork& left, const CompletedInstructionWork& right) {
+                return left.instruction->id < right.instruction->id;
             });
-            instruction_result.failure_message = instruction_result.failures.back().message;
+
+        for (auto& completed : completed_batch) {
+            if (!commit_completed_instruction_work(
+                    index,
+                    function,
+                    cache_identity,
+                    request,
+                    current_actor_id,
+                    completed,
+                    actor,
+                    states,
+                    execution_result)) {
+                break;
+            }
         }
 
-        if (!instruction_cache_hit && !geometry_owner_conflict && instruction_result.failures.empty()) {
-            publish_instruction_cache_entry(
-                request.cache_writer,
-                cache_identity,
-                node_id,
-                frame.effective_seed,
-                instruction_result.produced_outputs);
-        }
-
-        if (!instruction_result.failures.empty()) {
-            execution_result.failures.insert(
-                execution_result.failures.end(),
-                instruction_result.failures.begin(),
-                instruction_result.failures.end());
-        }
-
-        const auto unhandled = unhandled_failures(index, *instruction, instruction_result);
-        if (geometry_owner_conflict) {
-            execution_result.status = FunctionExecutionStatus::failed;
-            execution_result.failure_message = instruction_result.failure_message;
-            break;
-        }
-
-        if (!unhandled.empty()) {
-            execution_result.status = FunctionExecutionStatus::failed;
-            execution_result.failure_message = format_failure_summary(unhandled);
+        if (execution_result.status != FunctionExecutionStatus::completed) {
             break;
         }
     }

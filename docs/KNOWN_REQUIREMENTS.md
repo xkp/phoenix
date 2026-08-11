@@ -31,6 +31,9 @@ can be made with the full context available.
 - Regular instructions are intended to be independent and parallelizable when
   ready.
 - An instruction can run when all promised incoming inputs have been fulfilled.
+- If multiple upstream edges target the same input port, each edge is a
+  promised contribution and the instruction should wait for all such
+  contributions before becoming ready.
 - A promised input is an input the instruction is expected to receive during the
   current invocation.
 - An unconnected input is optional by absence of connection.
@@ -106,6 +109,10 @@ can be made with the full context available.
 ### Parallelism And Determinism
 
 - Multiple ready instructions may run in parallel.
+- Parallel graph scheduling should use a dynamic ready frontier rather than a
+  required fixed wave boundary.
+- When an instruction completes, propagation may immediately make downstream
+  instructions candidates for execution.
 - Deterministic final results matter more than deterministic execution order.
 - Scheduling order must not change final observable results.
 - Parallel execution should assume the existence of a shared execution context.
@@ -113,6 +120,37 @@ can be made with the full context available.
 - Parallel instruction execution should not rely on mutable shared state.
 - Any per-instruction execution state should be isolated from other concurrently
   running instructions unless explicitly modeled as immutable input data.
+- Shared graph state, actor state, cache writes, and diagnostics should be
+  updated through canonical result publication rather than worker completion
+  order.
+- The first worker-backed execution path may be constrained to ready regular
+  instruction handlers, leaving function calls, force-runs, actor-generating
+  instructions, and multiplex item parallelism on the serial path.
+- A multiplexed instruction remains one atomic graph node from the scheduler's
+  point of view.
+- Multiplex item work may run in parallel internally, but downstream graph work
+  waits until all item attempts have completed or the instruction reaches its
+  final failure/cancellation state.
+- Multiplex normal outputs, `else` outputs, failures, actor children, and cache
+  entries must commit in canonical item order.
+- Multiplex child function calls should collect per-item result slots and merge
+  those slots canonically before parent instruction publication.
+- When multiplex threading and instancing are both enabled, item fingerprints
+  must be computed before dispatching heavy work so items that can reuse an
+  instance are not sent to worker execution.
+- Instanced multiplex items should report reused-instance payloads through the
+  same per-item result slot path as regular worker results.
+- Initial multiplex item threading may use bounded batches and exclude shared
+  services such as cache stores and trace sinks until their thread-safety
+  contracts are explicit.
+- Cache stores and cache writers are main-thread-only in the current worker
+  model; cache-backed requests should fall back to serial instruction execution
+  until cache thread-safety is explicitly defined.
+- Trace sinks are centralized services in the current worker model; multiplex
+  item threading should be disabled when trace sinks are attached.
+- Regular handler threading may still run with trace sinks attached when trace
+  records are emitted before worker dispatch and during centralized
+  publication.
 - Parallelism design should favor immutability first, to reduce synchronization
   complexity and protect reproducibility.
 
@@ -275,6 +313,8 @@ can be made with the full context available.
   operations do not always pay for detailed item/value diagnostics.
 - Compact instruction tracing should record instruction identity and ownership
   without copying inputs, outputs, failures, items, or geometry payloads.
+- Compact publication tracing should record commit-time counts for outputs,
+  failures, actor deltas, and cache hits without copying heavy payloads.
 - Dirty call paths should resolve through the scope index to the nearest
   actor-owning scope before an executor rerun request is built.
 - Dirty instruction discovery must account for one function/node being executed

@@ -104,6 +104,8 @@ struct NodeRuntimeState {
     InstructionState state = InstructionState::idle;
     std::vector<PortState> input_ports;
     std::unordered_map<PortId, RuntimeValue> received_inputs;
+    std::unordered_map<PortId, std::size_t> promised_input_counts;
+    std::unordered_map<PortId, std::size_t> received_input_counts;
 };
 
 using InstructionHandler = std::function<InstructionResult(const InstructionExecutionFrame&)>;
@@ -163,6 +165,28 @@ public:
     virtual void record_instruction(FunctionExecutionInstructionRecord instruction) = 0;
 };
 
+struct FunctionExecutionPublicationRecord {
+    FunctionId function_id;
+    FunctionCallPath call_path;
+    NodeId node_id = 0;
+    std::optional<ActorId> actor_id;
+    std::size_t produced_output_count = 0;
+    std::size_t failure_count = 0;
+    std::size_t actor_child_delta_count = 0;
+    bool instruction_cache_hit = false;
+};
+
+class FunctionExecutionPublicationTraceSink {
+public:
+    virtual ~FunctionExecutionPublicationTraceSink() = default;
+
+    virtual void record_publication(FunctionExecutionPublicationRecord publication) = 0;
+};
+
+struct ExecutionOptions {
+    std::size_t worker_count = 1;
+};
+
 struct FunctionExecutionRequest {
     const FunctionDescriptor* function = nullptr;
     std::vector<PortValue> inputs;
@@ -172,6 +196,8 @@ struct FunctionExecutionRequest {
     ExecutionTraceLevel trace_level = ExecutionTraceLevel::none;
     FunctionExecutionScopeTraceSink* scope_trace_sink = nullptr;
     FunctionExecutionInstructionTraceSink* instruction_trace_sink = nullptr;
+    FunctionExecutionPublicationTraceSink* publication_trace_sink = nullptr;
+    ExecutionOptions options;
     const CacheStore* cache_store = nullptr;
     CacheWriter* cache_writer = nullptr;
     std::optional<std::size_t> parent_scope_index;

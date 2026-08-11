@@ -175,6 +175,22 @@ Any instruction whose promised inputs are all fulfilled is ready to run.
 
 Ready instructions may run in parallel.
 
+If multiple upstream edges target the same input port, each edge is a promised
+contribution. The port is not ready for execution until all promised
+contributions for that port have arrived or the instruction is force-run at
+equilibrium.
+
+The preferred execution model is a dynamic ready frontier:
+
+- the runtime keeps a queue or set of currently ready instructions
+- when an instruction completes, its outputs are propagated
+- propagation may make downstream instructions ready
+- newly ready instructions may enter the frontier immediately
+
+The runtime does not need a fixed wave or generation boundary between ready
+sets. A batch-wave implementation is valid only as a conservative
+implementation strategy, not as the semantic model.
+
 The runtime does not require deterministic execution order. It requires
 deterministic final results.
 
@@ -183,6 +199,19 @@ Therefore:
 - instruction behavior must not depend on thread timing
 - random behavior must be seed-driven
 - scheduling order must not affect final observable outputs
+- shared graph, actor, cache, and diagnostic state must be updated through
+  canonical result publication rather than arbitrary worker completion order
+- worker execution should produce instruction work results; the frontier owner
+  or another centralized publisher commits graph state, actor deltas, cache
+  writes, failures, and diagnostics
+
+The first worker-backed implementation is intentionally constrained. It may run
+multiple ready regular instruction handlers concurrently when a request opts
+into more than one worker. Function calls, force-runs, actor-generating
+instructions, and multiplex item parallelism remain on the serial path until
+their publication contracts are tightened separately. Even in the threaded
+path, workers only compute instruction work results; publication remains
+centralized and canonical.
 
 ### 5.2 Pending Instructions
 
@@ -315,6 +344,48 @@ if (instruction.multiplexes) {
 The scheduler treats the instruction as one node, but the instruction may
 internally apply its logic once per item.
 
+A multiplexed instruction is atomic from the graph scheduler's point of view.
+Downstream instructions do not become ready from partial item results. The
+instruction completes only after all item attempts have completed or the
+instruction has entered its final failure/cancellation state.
+
+Multiplex item work may run in parallel inside the instruction. Its externally
+visible results are committed only after the item results are merged into a
+canonical order. Normal outputs, `else` outputs, failures, actor children, and
+cache entries must not depend on item completion order.
+
+For child function calls, each multiplex item produces an item result slot. The
+slot can contain child outputs, failures, actor child deltas, and instancing
+prototype updates. The parent instruction merges those slots in canonical item
+order before graph publication.
+
+When multiplex threading and instancing are both enabled, the runtime should
+classify item candidates before dispatching heavy work. Each candidate computes
+the fingerprint needed to decide whether it is a prototype item or can reuse an
+existing prototype. Items that can be instanced must not be sent to worker
+execution for the expensive graph work. Instead, they report an instance result
+through the same per-item payload path used by regular work results, and the
+canonical merge publishes those payloads in item order.
+
+The first worker-backed multiplex implementation runs child invocation item
+slots concurrently in bounded batches. To keep the initial path safe, cache
+reads/writes and trace sinks remain excluded until those shared services have
+explicit thread-safety contracts. Instancing is supported by classifying item
+fingerprints before dispatch and sending only prototype work to workers.
+
+In the current worker model, cache stores/writers are main-thread-only services.
+A request that enables cache reads or writes must stay on the serial instruction
+execution path until cache implementations declare their own thread-safety
+contract. Trace sinks are also centralized services: instruction start and
+publication records are emitted by the frontier owner, and multiplex item
+threading is disabled when trace sinks are attached.
+
+Regular handler instructions may still run on workers while instruction and
+publication trace sinks are attached, because those trace records are emitted
+before dispatch and during centralized publication. Multiplex child item
+threading remains disabled with trace sinks attached because nested item work
+can emit its own scope, instruction, or publication records.
+
 Version one does not fully standardize what counts as an item beyond the general
 idea of per-face or per-element geometry processing.
 
@@ -440,6 +511,10 @@ Some functions are marked as actor-generating functions.
 When an actor-generating function runs, it creates one actor for that function
 call. If the function call is multiplexed, it may create one actor per
 multiplexed item.
+
+Child actors produced by a multiplexed call are committed in canonical item
+order. This applies whether the child actor came from a fresh function run,
+instancing, or a cache hit.
 
 The baseline semantics are equivalent to running the actor-generating function
 once per item. Instancing may later optimize equivalent item runs, but it must
@@ -630,9 +705,12 @@ Execution tracing is level-controlled:
 - `value`: reserved for selected value/input/output diagnostics
 
 Compact instruction records include function id, call path, node id,
-instruction kind, and actor id. They intentionally do not include inputs,
-outputs, failures, item payloads, or geometry payloads. This keeps ordinary
-partial-rerun discovery practical for large graphs and multiplex-heavy runs.
+instruction kind, and actor id. Publication records may also be emitted at
+commit time; they include compact counts for produced outputs, failures, actor
+child deltas, and whether the instruction result came from cache. They
+intentionally do not include inputs, outputs, failures, item payloads, or
+geometry payloads. This keeps ordinary partial-rerun discovery practical for
+large graphs and multiplex-heavy runs.
 
 Given a dirty call path, scope discovery queries the scope index for the nearest
 actor-owning scope and produces the scope-resolution request needed for a

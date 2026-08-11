@@ -560,18 +560,99 @@ Goal:
 
 Tasks:
 
-- introduce worker-task execution for ready instructions
+- introduce a dynamic ready-frontier scheduler contract
+- preserve instructions as atomic graph nodes: outputs propagate only after an
+  instruction completes
+- allow newly ready downstream instructions to enter the frontier immediately
+  after propagation
 - keep the shared run context immutable
 - isolate per-instruction execution state
 - centralize result publication and graph-state updates
+- commit outputs, `else` outputs, failures, actor children, cache writes, and
+  diagnostics in canonical order rather than worker completion order
+- define multiplex item execution as internal instruction parallelism
+- require multiplexed instructions to merge item results canonically before
+  downstream propagation
+- when multiplex threading and instancing are both enabled, compute item
+  equivalence fingerprints before dispatching heavy work, and do not send
+  instance-reused items into worker execution
+- add worker-task execution for ready frontier instructions after the
+  single-threaded frontier shape is proven
 - verify that scheduling order does not affect final results
 - verify compatibility with caching and partial reruns
 
 Deliverables:
 
-- concurrent scheduler
+- single-threaded dynamic frontier scheduler
+- worker-backed frontier scheduler
+- multiplex item-result publication contract
 - concurrency safety tests
 - reproducibility-under-parallelism tests
+
+Current status:
+
+- `FunctionExecutor` now routes ready-node selection through an explicit
+  single-threaded ready frontier
+- the first frontier test proves newly ready downstream work can be admitted
+  after each instruction completion rather than waiting for a fixed wave
+  boundary
+- instruction execution now has an explicit publication helper that commits
+  node completion, normal output propagation, `else` propagation, failures, and
+  instruction cache writes through one centralized path
+- runtime state tracks promised and received contribution counts per input
+  port, so downstream instructions wait for all upstream contributions before
+  becoming ready
+- instruction work now has an explicit work input/result boundary; the work
+  phase computes instruction outputs, cache hits, nested calls, failures, and
+  actor child deltas without directly publishing graph state
+- the executor applies actor child deltas and then uses the centralized
+  publication path, preserving a future split where workers compute and the
+  frontier owner commits
+- actor child deltas now commit through a named actor-delta publication helper
+- cached multiplexed actor-generating calls preserve canonical child actor
+  order by item key
+- execution now exposes an optional publication trace sink that records
+  commit-time instruction publication facts, including output count, failure
+  count, actor child delta count, and instruction cache-hit status
+- `FunctionExecutionRequest` now accepts `ExecutionOptions`, starting with a
+  `worker_count`
+- the first worker-backed path dispatches multiple ready, regular handler
+  instructions concurrently when `worker_count > 1`
+- constrained threaded execution excludes function calls, force-runs, and
+  actor-generating instructions; the frontier owner still commits all graph
+  state, actor deltas, failures, cache writes, and traces
+- threaded execution tests verify independent handler overlap while publication
+  remains ordered by node id
+- threaded hardening tests now cover worker-count observable equivalence,
+  publication order when completion order differs, centralized failure
+  publication from worker results, and serial fallback for force-runs
+- multiplexed child function calls now use explicit per-item result slots before
+  merging into the parent instruction work result
+- multiplex item slots carry produced outputs, failures, actor child deltas, and
+  instancing prototype updates, then merge canonically in item order
+- mixed success/failure actor-generating multiplex tests now verify the parent
+  call publication record reports the merged actor-delta and failure counts
+- the first multiplex worker path runs child invocation items concurrently in
+  bounded batches up to `worker_count`
+- constrained multiplex item threading excludes cache reads/writes and trace
+  sinks so item workers do not mutate shared runtime services
+- multiplex threading tests verify actor-generating child item overlap while
+  committed child actor order remains canonical by item key
+- instancing-compatible multiplex threading now fingerprints item candidates
+  first, dispatches only canonical prototype items to workers, and reports
+  reused instances through the same per-item result payload path
+- threaded stress tests now cover repeated-run reproducibility, worker-count
+  bounds for instanced prototype work, and canonical failure publication when
+  multiplex item completion order differs
+- shared cache services are main-thread-only in the current worker model; any
+  request with cache reads or writes stays on the serial instruction path
+- trace sinks remain centralized publication/start services; multiplex item
+  threading is disabled when trace sinks are attached
+- fallback tests verify cache-backed regular handlers and trace-backed
+  multiplex item calls remain serial despite `worker_count > 1`
+- regular handler threading can run with instruction and publication trace
+  sinks attached because both trace records are emitted by the frontier owner,
+  not worker threads
 
 ## Phase 12: Address CGAL Performance Strategy
 
