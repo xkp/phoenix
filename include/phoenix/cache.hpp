@@ -2,6 +2,7 @@
 
 #include "phoenix/actors.hpp"
 #include "phoenix/common.hpp"
+#include "phoenix/graph.hpp"
 #include "phoenix/values.hpp"
 
 #include <cstdint>
@@ -53,6 +54,20 @@ public:
     [[nodiscard]] CacheKey actor_prototype(const ActorPrototypeCacheKeyInput& input) const;
 };
 
+struct CacheIdentityInput {
+    const FunctionDescriptor* function = nullptr;
+    FunctionCallPath call_path;
+    std::vector<PortValue> inputs;
+    SeedValue global_seed = 0;
+};
+
+class CacheIdentityBuilder {
+public:
+    [[nodiscard]] std::string graph_revision(const FunctionDescriptor& function) const;
+    [[nodiscard]] std::string input_fingerprint(const std::vector<PortValue>& inputs) const;
+    [[nodiscard]] CacheIdentity identity(const CacheIdentityInput& input) const;
+};
+
 struct InstructionCacheEntry {
     CacheKey key;
     std::vector<PortValue> outputs;
@@ -88,12 +103,22 @@ public:
         const CacheKey& key) const = 0;
 };
 
-class MemoryCacheStore final : public CacheStore {
+class CacheWriter {
 public:
-    void put_instruction(InstructionCacheEntry entry);
-    void put_function_call(FunctionCallCacheEntry entry);
-    void put_actor_subtree(ActorSubtreeCacheEntry entry);
-    void put_actor_prototype(ActorPrototypeCacheEntry entry);
+    virtual ~CacheWriter() = default;
+
+    virtual void put_instruction(InstructionCacheEntry entry) = 0;
+    virtual void put_function_call(FunctionCallCacheEntry entry) = 0;
+    virtual void put_actor_subtree(ActorSubtreeCacheEntry entry) = 0;
+    virtual void put_actor_prototype(ActorPrototypeCacheEntry entry) = 0;
+};
+
+class MemoryCacheStore final : public CacheStore, public CacheWriter {
+public:
+    void put_instruction(InstructionCacheEntry entry) override;
+    void put_function_call(FunctionCallCacheEntry entry) override;
+    void put_actor_subtree(ActorSubtreeCacheEntry entry) override;
+    void put_actor_prototype(ActorPrototypeCacheEntry entry) override;
 
     [[nodiscard]] bool remove_instruction(const CacheKey& key);
     [[nodiscard]] bool remove_function_call(const CacheKey& key);

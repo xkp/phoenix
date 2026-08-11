@@ -513,8 +513,8 @@ Current status:
 - implementation started with deterministic cache identity scaffolding
 - `CacheKeyBuilder` creates keys for instruction outputs, function calls, actor
   subtrees, and actor prototypes
-- keys include function identity, call path, graph revision placeholder, input
-  fingerprint placeholder, seed identity, and kind-specific fields
+- keys include function identity, call path, graph revision, input fingerprint,
+  seed identity, and kind-specific fields
 - actor prototype keys include explicit instance keys
 - `MemoryCacheStore` provides in-memory put/find behavior for instruction
   outputs, function calls, actor subtrees, and actor prototypes
@@ -522,14 +522,35 @@ Current status:
 - partial rerun planning can query cache availability without executing a rerun
 - `MemoryCacheStore` supports explicit eviction for individual cache entries
   and identity-scoped clearing across all cache families
+- `CacheIdentityBuilder` derives deterministic graph revision and input
+  fingerprint strings from function graph shape, call path, inputs, and seed
+- input fingerprints include geometry debug identity and actor accumulation
+  ownership, so actor-owned geometry does not collide with similarly labeled
+  geometry owned by another actor
+- `PartialRerunPlanner` can derive cache identity from the rerun request when a
+  prebuilt `CacheIdentity` is not supplied
+- `FunctionExecutor` can optionally publish cache entries through `CacheWriter`
+  while running
+- successful instruction executions publish instruction-output cache entries
+  keyed by derived invocation identity, node id, and effective seed
+- completed function invocations publish function-call cache entries and actor
+  subtree cache entries
+- `FunctionExecutor` can optionally read cache entries through `CacheStore`
+- function-call cache hits can skip an entire function invocation
+- instruction-output cache hits can skip individual instruction execution while
+  continuing downstream graph execution
+- execution cache-hit tests compare cached reuse against uncached full execution
+  for observable outputs and actor hierarchy shape
+- execution ignores stale function-call cache entries when identity inputs such
+  as seed identity differ
 
 Remaining Phase 10 work:
 
 - define production storage for heavy geometry payloads
-- define real graph/body revision fingerprints
-- define real input fingerprints, including topology-aware geometry identity
-- integrate cache lookup with partial rerun/invalidation decisions
-- validate cached reuse against full rerun equivalence
+- replace v1 debug-label geometry fingerprints with topology-aware geometry
+  identity
+- extend cache/full-rerun equivalence validation once concrete geometry payloads
+  and topology-aware identity are available
 
 ## Phase 11: Introduce Parallel Execution
 

@@ -2,8 +2,39 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <utility>
 
 namespace {
+
+using phoenix::FunctionDescriptor;
+using phoenix::InstructionDescriptor;
+using phoenix::PortDescriptor;
+using phoenix::PortDirection;
+
+PortDescriptor make_input_port(const char* id, const char* type)
+{
+    return PortDescriptor{id, type, PortDirection::input};
+}
+
+PortDescriptor make_output_port(const char* id, const char* type)
+{
+    return PortDescriptor{id, type, PortDirection::output};
+}
+
+InstructionDescriptor make_instruction(
+    phoenix::NodeId id,
+    const char* kind,
+    std::vector<PortDescriptor> inputs,
+    std::vector<PortDescriptor> outputs)
+{
+    InstructionDescriptor instruction;
+    instruction.id = id;
+    instruction.kind = kind;
+    instruction.input_ports = std::move(inputs);
+    instruction.output_ports = std::move(outputs);
+    instruction.has_else_port = false;
+    return instruction;
+}
 
 phoenix::CacheIdentity base_identity()
 {
@@ -127,6 +158,114 @@ bool test_cache_key_kinds_are_distinct()
     const phoenix::CacheKeyBuilder builder;
     return builder.function_call(function_input).stable_key
         != builder.actor_prototype(prototype_input).stable_key;
+}
+
+bool test_graph_revision_is_stable_for_equivalent_function_shape()
+{
+    const auto first = base_identity();
+    auto function = FunctionDescriptor{};
+    function.id = first.function_id;
+    function.input_ports = {make_input_port("input", "geometry")};
+    function.output_ports = {make_output_port("result", "geometry")};
+    function.instructions = {
+        make_instruction(
+            2,
+            "consume",
+            {make_input_port("input", "geometry")},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            1,
+            "source",
+            {},
+            {make_output_port("output", "geometry")}),
+    };
+    function.edges = {
+        phoenix::EdgeDescriptor{1, "output", 2, "input"},
+    };
+
+    auto same_shape = function;
+    same_shape.instructions = {
+        function.instructions[1],
+        function.instructions[0],
+    };
+
+    const phoenix::CacheIdentityBuilder builder;
+    return builder.graph_revision(function) == builder.graph_revision(same_shape);
+}
+
+bool test_graph_revision_changes_with_instruction_shape()
+{
+    auto function = FunctionDescriptor{};
+    function.id = "shape";
+    function.instructions = {
+        make_instruction(
+            1,
+            "source",
+            {},
+            {make_output_port("output", "geometry")}),
+    };
+
+    auto changed = function;
+    changed.instructions.front().kind = "other_source";
+
+    const phoenix::CacheIdentityBuilder builder;
+    return builder.graph_revision(function) != builder.graph_revision(changed);
+}
+
+bool test_input_fingerprint_is_stable_by_port_name()
+{
+    const std::vector<phoenix::PortValue> first = {
+        phoenix::PortValue{"b", phoenix::RuntimeValue::literal(phoenix::LiteralValue{std::int64_t{2}})},
+        phoenix::PortValue{"a", phoenix::RuntimeValue::geometry("mesh-a", "actor:a")},
+    };
+    const std::vector<phoenix::PortValue> second = {
+        first[1],
+        first[0],
+    };
+
+    const phoenix::CacheIdentityBuilder builder;
+    return builder.input_fingerprint(first) == builder.input_fingerprint(second);
+}
+
+bool test_input_fingerprint_changes_with_geometry_owner()
+{
+    const std::vector<phoenix::PortValue> first = {
+        phoenix::PortValue{"input", phoenix::RuntimeValue::geometry("mesh", "actor:a")},
+    };
+    const std::vector<phoenix::PortValue> second = {
+        phoenix::PortValue{"input", phoenix::RuntimeValue::geometry("mesh", "actor:b")},
+    };
+
+    const phoenix::CacheIdentityBuilder builder;
+    return builder.input_fingerprint(first) != builder.input_fingerprint(second);
+}
+
+bool test_cache_identity_builder_populates_identity()
+{
+    auto function = FunctionDescriptor{};
+    function.id = "identity-function";
+    function.input_ports = {make_input_port("input", "geometry")};
+    function.instructions = {
+        make_instruction(
+            1,
+            "source",
+            {make_input_port("input", "geometry")},
+            {make_output_port("output", "geometry")}),
+    };
+
+    const phoenix::CacheIdentityBuilder builder;
+    const auto identity = builder.identity(phoenix::CacheIdentityInput{
+        &function,
+        {"root", "2:identity-function"},
+        {phoenix::PortValue{"input", phoenix::RuntimeValue::geometry("mesh", "actor:root")}},
+        77,
+    });
+
+    return identity.function_id == "identity-function"
+        && identity.call_path == phoenix::FunctionCallPath({"root", "2:identity-function"})
+        && !identity.graph_revision.empty()
+        && !identity.input_fingerprint.empty()
+        && identity.global_seed == 77;
 }
 
 bool test_missing_instruction_entry_returns_empty()
@@ -424,6 +563,11 @@ int main()
     ok = run_test("actor subtree key changes with actor id", test_actor_subtree_key_changes_with_actor_id) && ok;
     ok = run_test("actor prototype key changes with instance key", test_actor_prototype_key_changes_with_instance_key) && ok;
     ok = run_test("cache key kinds are distinct", test_cache_key_kinds_are_distinct) && ok;
+    ok = run_test("graph revision is stable for equivalent function shape", test_graph_revision_is_stable_for_equivalent_function_shape) && ok;
+    ok = run_test("graph revision changes with instruction shape", test_graph_revision_changes_with_instruction_shape) && ok;
+    ok = run_test("input fingerprint is stable by port name", test_input_fingerprint_is_stable_by_port_name) && ok;
+    ok = run_test("input fingerprint changes with geometry owner", test_input_fingerprint_changes_with_geometry_owner) && ok;
+    ok = run_test("cache identity builder populates identity", test_cache_identity_builder_populates_identity) && ok;
     ok = run_test("missing instruction entry returns empty", test_missing_instruction_entry_returns_empty) && ok;
     ok = run_test("stored instruction outputs can be retrieved", test_stored_instruction_outputs_can_be_retrieved) && ok;
     ok = run_test("different instruction key does not collide", test_different_instruction_key_does_not_collide) && ok;

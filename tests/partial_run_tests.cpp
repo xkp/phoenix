@@ -157,6 +157,54 @@ bool test_partial_plan_detects_instruction_cache_hits()
         && !plan.instructions[2].cache_hit;
 }
 
+bool test_partial_plan_derives_cache_identity_when_not_supplied()
+{
+    const auto function = make_function();
+    const phoenix::CacheIdentityBuilder identity_builder;
+    const auto identity = identity_builder.identity(phoenix::CacheIdentityInput{
+        &function,
+        {"root"},
+        {phoenix::PortValue{"input", phoenix::RuntimeValue::geometry("mesh", "actor:root")}},
+        42,
+    });
+    const phoenix::CacheKeyBuilder key_builder;
+
+    phoenix::MemoryCacheStore cache_store;
+    phoenix::InstructionCacheKeyInput key_input;
+    key_input.identity = identity;
+    key_input.node_id = 4;
+    key_input.effective_seed = 40;
+    phoenix::InstructionCacheEntry entry;
+    entry.key = key_builder.instruction_outputs(key_input);
+    entry.outputs = {
+        phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("cached")},
+    };
+    cache_store.put_instruction(entry);
+
+    phoenix::PartialRerunRequest request;
+    request.function = &function;
+    request.changed_instructions = {2};
+    request.call_path = {"root"};
+    request.inputs = {
+        phoenix::PortValue{"input", phoenix::RuntimeValue::geometry("mesh", "actor:root")},
+    };
+    request.global_seed = 42;
+    request.effective_instruction_seeds = {
+        {2, 20},
+        {4, 40},
+        {99, 99},
+    };
+    request.cache_store = &cache_store;
+
+    phoenix::PartialRerunPlanner planner;
+    const auto plan = planner.plan(request);
+
+    return plan.instructions.size() == 3
+        && !plan.instructions[0].cache_hit
+        && plan.instructions[1].cache_hit
+        && !plan.instructions[2].cache_hit;
+}
+
 bool test_partial_plan_detects_function_call_cache_hit()
 {
     const auto function = make_function();
@@ -249,6 +297,7 @@ int main()
 
     ok = run_test("partial plan includes dirty instruction cache keys", test_partial_plan_includes_dirty_instruction_cache_keys) && ok;
     ok = run_test("partial plan detects instruction cache hits", test_partial_plan_detects_instruction_cache_hits) && ok;
+    ok = run_test("partial plan derives cache identity when not supplied", test_partial_plan_derives_cache_identity_when_not_supplied) && ok;
     ok = run_test("partial plan detects function call cache hit", test_partial_plan_detects_function_call_cache_hit) && ok;
     ok = run_test("partial plan detects actor subtree cache hit", test_partial_plan_detects_actor_subtree_cache_hit) && ok;
     ok = run_test("leaf partial plan has no function cache key", test_leaf_partial_plan_has_no_function_cache_key) && ok;

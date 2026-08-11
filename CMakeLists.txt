@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(CGAL REQUIRED)
 
 add_executable(phoenix_cgal_app
+    src/cache.cpp
     src/execution.cpp
     src/graph.cpp
     src/graph_validation.cpp
@@ -67,6 +68,7 @@ else()
 endif()
 
 add_executable(phoenix_execution_tests
+    src/cache.cpp
     src/execution.cpp
     src/graph.cpp
     src/randomness.cpp
@@ -202,6 +204,7 @@ else()
 endif()
 
 add_executable(phoenix_partial_run_scope_index_tests
+    src/cache.cpp
     src/execution.cpp
     src/graph.cpp
     src/partial_run_scope_index.cpp
@@ -247,6 +250,7 @@ else()
 endif()
 
 add_executable(phoenix_partial_run_instruction_index_tests
+    src/cache.cpp
     src/execution.cpp
     src/graph.cpp
     src/partial_run_instruction_index.cpp

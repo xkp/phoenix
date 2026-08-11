@@ -316,6 +316,8 @@ can be made with the full context available.
 - Caching is required for partial runs in version one.
 - Cache identity must include function/call identity, graph/body identity,
   input identity, and seed identity before cached work can be reused.
+- Cache input identity must include geometry actor ownership so the same
+  geometry label owned by different actors does not collide.
 - The cache must support invalidating dirty deterministic identities without
   inspecting or copying heavy geometry payloads.
 - Cache storage must account for heavy geometry payloads and should not assume

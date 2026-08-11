@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phoenix/actors.hpp"
+#include "phoenix/cache.hpp"
 #include "phoenix/common.hpp"
 #include "phoenix/graph.hpp"
 #include "phoenix/randomness.hpp"
@@ -171,6 +172,8 @@ struct FunctionExecutionRequest {
     ExecutionTraceLevel trace_level = ExecutionTraceLevel::none;
     FunctionExecutionScopeTraceSink* scope_trace_sink = nullptr;
     FunctionExecutionInstructionTraceSink* instruction_trace_sink = nullptr;
+    const CacheStore* cache_store = nullptr;
+    CacheWriter* cache_writer = nullptr;
     std::optional<std::size_t> parent_scope_index;
 };
 

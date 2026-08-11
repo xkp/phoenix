@@ -100,6 +100,114 @@ bool output_has_geometry_label(
     return false;
 }
 
+bool geometry_values_equal(const phoenix::GeometryValue& left, const phoenix::GeometryValue& right)
+{
+    return left.debug_label == right.debug_label
+        && left.accumulation_actor_id == right.accumulation_actor_id;
+}
+
+bool runtime_values_equal(const phoenix::RuntimeValue& left, const phoenix::RuntimeValue& right)
+{
+    if (left.presence != right.presence) {
+        return false;
+    }
+
+    if (const auto* left_geometry = left.as_geometry()) {
+        const auto* right_geometry = right.as_geometry();
+        return right_geometry != nullptr && geometry_values_equal(*left_geometry, *right_geometry);
+    }
+
+    if (const auto* left_collection = left.as_geometry_collection()) {
+        const auto* right_collection = right.as_geometry_collection();
+        if (right_collection == nullptr
+            || left_collection->contributions.size() != right_collection->contributions.size()) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < left_collection->contributions.size(); ++i) {
+            if (!geometry_values_equal(
+                    left_collection->contributions[i],
+                    right_collection->contributions[i])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    if (const auto* left_literal = left.as_literal()) {
+        const auto* right_literal = right.as_literal();
+        return right_literal != nullptr && *left_literal == *right_literal;
+    }
+
+    if (const auto* left_default = left.as_default()) {
+        const auto* right_default = right.as_default();
+        return right_default != nullptr && left_default->source_type == right_default->source_type;
+    }
+
+    return right.is_missing() || right.is_empty();
+}
+
+bool port_values_equal(
+    const std::vector<phoenix::PortValue>& left,
+    const std::vector<phoenix::PortValue>& right)
+{
+    if (left.size() != right.size()) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        if (left[i].port != right[i].port
+            || !runtime_values_equal(left[i].value, right[i].value)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool actors_observably_equal(const phoenix::ActorNode& left, const phoenix::ActorNode& right)
+{
+    if (left.id != right.id
+        || left.name != right.name
+        || left.geometry.has_value() != right.geometry.has_value()
+        || left.children.size() != right.children.size()
+        || left.prototype.has_value() != right.prototype.has_value()) {
+        return false;
+    }
+
+    if (left.geometry.has_value() && !geometry_values_equal(*left.geometry, *right.geometry)) {
+        return false;
+    }
+
+    if (left.prototype.has_value()
+        && left.prototype->prototype_id != right.prototype->prototype_id) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < left.children.size(); ++i) {
+        if (!actors_observably_equal(left.children[i], right.children[i])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool execution_results_observably_equal(
+    const phoenix::FunctionExecutionResult& left,
+    const phoenix::FunctionExecutionResult& right)
+{
+    if (left.status != right.status
+        || left.failure_message != right.failure_message
+        || !port_values_equal(left.outputs, right.outputs)
+        || left.actor.has_value() != right.actor.has_value()) {
+        return false;
+    }
+
+    return !left.actor.has_value() || actors_observably_equal(*left.actor, *right.actor);
+}
+
 bool output_has_geometry_collection_labels(
     const phoenix::FunctionExecutionResult& result,
     const char* port,
@@ -2083,6 +2191,523 @@ bool test_instancing_does_not_reuse_without_explicit_keys()
         && !result.actor->children[2].prototype.has_value();
 }
 
+bool test_execution_populates_cache_entries()
+{
+    FunctionDescriptor function;
+    function.id = "cache-published";
+    function.output_ports = {make_output_port("result", "geometry")};
+    function.instructions = {
+        make_instruction(
+            1,
+            "cache_source",
+            {},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    function.edges = {
+        EdgeDescriptor{1, "output", 99, "result"},
+    };
+    function.output_node_id = 99;
+
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "cache_source",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("cached-output")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::MemoryCacheStore cache_store;
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+    request.context.function_id = function.id;
+    request.context.call_path = {"root"};
+    request.context.global_seed = 123;
+    request.cache_writer = &cache_store;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    const phoenix::CacheIdentityBuilder identity_builder;
+    const auto identity = identity_builder.identity(phoenix::CacheIdentityInput{
+        &function,
+        {"root"},
+        {},
+        123,
+    });
+
+    const phoenix::SeedDeriver seed_deriver;
+    phoenix::SeedDerivationInput seed_input;
+    seed_input.global_seed = 123;
+    seed_input.call_path = {"root"};
+    seed_input.node_id = 1;
+
+    const phoenix::CacheKeyBuilder key_builder;
+    phoenix::InstructionCacheKeyInput instruction_key_input;
+    instruction_key_input.identity = identity;
+    instruction_key_input.node_id = 1;
+    instruction_key_input.effective_seed = seed_deriver.derive(seed_input);
+
+    phoenix::ActorSubtreeCacheKeyInput subtree_key_input;
+    subtree_key_input.identity = identity;
+    subtree_key_input.actor_id = "actor:root";
+
+    const auto instruction = cache_store.find_instruction(
+        key_builder.instruction_outputs(instruction_key_input));
+    const auto function_call = cache_store.find_function_call(
+        key_builder.function_call(phoenix::FunctionCallCacheKeyInput{identity}));
+    const auto actor_subtree = cache_store.find_actor_subtree(
+        key_builder.actor_subtree(subtree_key_input));
+    const auto* instruction_geometry = instruction.has_value() && !instruction->outputs.empty()
+        ? instruction->outputs.front().value.as_geometry()
+        : nullptr;
+    const auto* function_geometry = function_call.has_value() && !function_call->outputs.empty()
+        ? function_call->outputs.front().value.as_geometry()
+        : nullptr;
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && instruction_geometry != nullptr
+        && instruction_geometry->debug_label == "cached-output"
+        && function_geometry != nullptr
+        && function_geometry->debug_label == "cached-output"
+        && actor_subtree.has_value()
+        && actor_subtree->actor.id == "actor:root";
+}
+
+bool test_execution_uses_function_call_cache_hit()
+{
+    FunctionDescriptor function;
+    function.id = "cache-read-function";
+    function.output_ports = {make_output_port("result", "geometry")};
+    function.instructions = {
+        make_instruction(
+            1,
+            "should_not_run_function_cache",
+            {},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    function.edges = {EdgeDescriptor{1, "output", 99, "result"}};
+    function.output_node_id = 99;
+
+    const phoenix::CacheIdentity identity = phoenix::CacheIdentityBuilder{}.identity(
+        phoenix::CacheIdentityInput{&function, {"root"}, {}, 5});
+    phoenix::MemoryCacheStore cache_store;
+    phoenix::FunctionCallCacheEntry entry;
+    entry.key = phoenix::CacheKeyBuilder{}.function_call(phoenix::FunctionCallCacheKeyInput{identity});
+    entry.outputs = {
+        phoenix::PortValue{"result", phoenix::RuntimeValue::geometry("from-function-cache")},
+    };
+    entry.actor = phoenix::ActorNode{};
+    entry.actor->id = "actor:cached";
+    cache_store.put_function_call(entry);
+
+    int run_count = 0;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "should_not_run_function_cache",
+        [&run_count](const phoenix::InstructionExecutionFrame& frame) {
+            ++run_count;
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("uncached")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+    request.context.function_id = function.id;
+    request.context.call_path = {"root"};
+    request.context.global_seed = 5;
+    request.cache_store = &cache_store;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && run_count == 0
+        && output_has_geometry_label(result, "result", "from-function-cache")
+        && result.actor.has_value()
+        && result.actor->id == "actor:cached";
+}
+
+bool test_execution_uses_instruction_cache_hit()
+{
+    FunctionDescriptor function;
+    function.id = "cache-read-instruction";
+    function.output_ports = {make_output_port("result", "geometry")};
+    function.instructions = {
+        make_instruction(
+            1,
+            "should_not_run_instruction_cache",
+            {},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            2,
+            "downstream_after_cache",
+            {make_input_port("input", "geometry")},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    function.edges = {
+        EdgeDescriptor{1, "output", 2, "input"},
+        EdgeDescriptor{2, "output", 99, "result"},
+    };
+    function.output_node_id = 99;
+
+    const auto identity = phoenix::CacheIdentityBuilder{}.identity(
+        phoenix::CacheIdentityInput{&function, {"root"}, {}, 9});
+    phoenix::SeedDerivationInput seed_input;
+    seed_input.global_seed = 9;
+    seed_input.call_path = {"root"};
+    seed_input.node_id = 1;
+
+    phoenix::InstructionCacheKeyInput key_input;
+    key_input.identity = identity;
+    key_input.node_id = 1;
+    key_input.effective_seed = phoenix::SeedDeriver{}.derive(seed_input);
+
+    phoenix::MemoryCacheStore cache_store;
+    phoenix::InstructionCacheEntry entry;
+    entry.key = phoenix::CacheKeyBuilder{}.instruction_outputs(key_input);
+    entry.outputs = {
+        phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("from-instruction-cache")},
+    };
+    cache_store.put_instruction(entry);
+
+    int source_run_count = 0;
+    bool downstream_saw_cached_input = false;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "should_not_run_instruction_cache",
+        [&source_run_count](const phoenix::InstructionExecutionFrame& frame) {
+            ++source_run_count;
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("uncached")}},
+                std::nullopt,
+            };
+        });
+    registry.register_handler(
+        "downstream_after_cache",
+        [&downstream_saw_cached_input](const phoenix::InstructionExecutionFrame& frame) {
+            const auto* input = find_input(frame, "input");
+            const auto* geometry = input == nullptr ? nullptr : input->as_geometry();
+            downstream_saw_cached_input =
+                geometry != nullptr && geometry->debug_label == "from-instruction-cache";
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("downstream")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+    request.context.function_id = function.id;
+    request.context.call_path = {"root"};
+    request.context.global_seed = 9;
+    request.cache_store = &cache_store;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && source_run_count == 0
+        && downstream_saw_cached_input
+        && output_has_geometry_label(result, "result", "downstream");
+}
+
+bool test_function_call_cache_hit_matches_full_execution()
+{
+    FunctionDescriptor child;
+    child.id = "cache-equivalent-child";
+    child.generates_actor = true;
+    child.instructions = {
+        make_instruction(
+            7,
+            "cache_equivalent_child_geometry",
+            {},
+            {make_output_port("output", "geometry")}),
+    };
+
+    FunctionDescriptor parent;
+    parent.id = "cache-equivalent-parent";
+    auto call_child = make_instruction(
+        2,
+        "call",
+        {},
+        {make_output_port("output", "geometry")});
+    call_child.called_function_id = child.id;
+    parent.instructions = {call_child};
+
+    phoenix::InstructionRegistry full_registry;
+    full_registry.register_handler(
+        "cache_equivalent_child_geometry",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("child-cache-shape")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionLibrary functions;
+    functions.register_function(parent);
+    functions.register_function(child);
+
+    phoenix::MemoryCacheStore cache_store;
+    phoenix::FunctionExecutionRequest request;
+    request.function = &parent;
+    request.context.function_id = parent.id;
+    request.context.call_path = {"root"};
+    request.context.global_seed = 31;
+    request.cache_writer = &cache_store;
+
+    const phoenix::FunctionExecutor full_executor(full_registry, functions);
+    const auto full_result = full_executor.run(request);
+
+    int cached_run_count = 0;
+    phoenix::InstructionRegistry cached_registry;
+    cached_registry.register_handler(
+        "cache_equivalent_child_geometry",
+        [&cached_run_count](const phoenix::InstructionExecutionFrame& frame) {
+            ++cached_run_count;
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("should-not-run")}},
+                std::nullopt,
+            };
+        });
+
+    request.cache_writer = nullptr;
+    request.cache_store = &cache_store;
+    const phoenix::FunctionExecutor cached_executor(cached_registry, functions);
+    const auto cached_result = cached_executor.run(request);
+
+    return cached_run_count == 0
+        && full_result.actor.has_value()
+        && full_result.actor->children.size() == 1
+        && execution_results_observably_equal(full_result, cached_result);
+}
+
+bool test_instruction_cache_hit_matches_full_execution()
+{
+    FunctionDescriptor function;
+    function.id = "cache-equivalent-instruction";
+    function.output_ports = {make_output_port("result", "geometry")};
+    function.instructions = {
+        make_instruction(
+            1,
+            "cache_equivalent_source",
+            {},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            2,
+            "cache_equivalent_downstream",
+            {make_input_port("input", "geometry")},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    function.edges = {
+        EdgeDescriptor{1, "output", 2, "input"},
+        EdgeDescriptor{2, "output", 99, "result"},
+    };
+    function.output_node_id = 99;
+
+    phoenix::InstructionRegistry full_registry;
+    full_registry.register_handler(
+        "cache_equivalent_source",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("source-equivalent")}},
+                std::nullopt,
+            };
+        });
+    full_registry.register_handler(
+        "cache_equivalent_downstream",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            const auto* input = find_input(frame, "input");
+            const auto* geometry = input == nullptr ? nullptr : input->as_geometry();
+            if (geometry == nullptr || geometry->debug_label != "source-equivalent") {
+                return phoenix::InstructionResult{
+                    frame.inputs.node_id,
+                    {},
+                    "downstream did not receive source geometry",
+                };
+            }
+
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("downstream-equivalent")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::MemoryCacheStore cache_store;
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+    request.context.function_id = function.id;
+    request.context.call_path = {"root"};
+    request.context.global_seed = 41;
+    request.cache_writer = &cache_store;
+
+    const phoenix::FunctionExecutor full_executor(full_registry);
+    const auto full_result = full_executor.run(request);
+
+    const auto identity = phoenix::CacheIdentityBuilder{}.identity(phoenix::CacheIdentityInput{
+        &function,
+        {"root"},
+        {},
+        41,
+    });
+    const phoenix::CacheKeyBuilder key_builder;
+    const bool removed_function_call = cache_store.remove_function_call(
+        key_builder.function_call(phoenix::FunctionCallCacheKeyInput{identity}));
+
+    phoenix::SeedDerivationInput seed_input;
+    seed_input.global_seed = 41;
+    seed_input.call_path = {"root"};
+    seed_input.node_id = 2;
+
+    phoenix::InstructionCacheKeyInput instruction_key_input;
+    instruction_key_input.identity = identity;
+    instruction_key_input.node_id = 2;
+    instruction_key_input.effective_seed = phoenix::SeedDeriver{}.derive(seed_input);
+    const bool removed_downstream_instruction =
+        cache_store.remove_instruction(key_builder.instruction_outputs(instruction_key_input));
+
+    int source_run_count = 0;
+    int downstream_run_count = 0;
+    phoenix::InstructionRegistry cached_registry;
+    cached_registry.register_handler(
+        "cache_equivalent_source",
+        [&source_run_count](const phoenix::InstructionExecutionFrame& frame) {
+            ++source_run_count;
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("should-not-run")}},
+                std::nullopt,
+            };
+        });
+    cached_registry.register_handler(
+        "cache_equivalent_downstream",
+        [&downstream_run_count](const phoenix::InstructionExecutionFrame& frame) {
+            ++downstream_run_count;
+            const auto* input = find_input(frame, "input");
+            const auto* geometry = input == nullptr ? nullptr : input->as_geometry();
+            if (geometry == nullptr || geometry->debug_label != "source-equivalent") {
+                return phoenix::InstructionResult{
+                    frame.inputs.node_id,
+                    {},
+                    "downstream did not receive cached source geometry",
+                };
+            }
+
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("downstream-equivalent")}},
+                std::nullopt,
+            };
+        });
+
+    request.cache_writer = nullptr;
+    request.cache_store = &cache_store;
+    const phoenix::FunctionExecutor cached_executor(cached_registry);
+    const auto cached_result = cached_executor.run(request);
+
+    return removed_function_call
+        && removed_downstream_instruction
+        && source_run_count == 0
+        && downstream_run_count == 1
+        && execution_results_observably_equal(full_result, cached_result);
+}
+
+bool test_execution_ignores_function_cache_with_wrong_identity()
+{
+    FunctionDescriptor function;
+    function.id = "cache-wrong-identity";
+    function.output_ports = {make_output_port("result", "geometry")};
+    function.instructions = {
+        make_instruction(
+            1,
+            "wrong_identity_source",
+            {},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    function.edges = {EdgeDescriptor{1, "output", 99, "result"}};
+    function.output_node_id = 99;
+
+    const auto stale_identity = phoenix::CacheIdentityBuilder{}.identity(phoenix::CacheIdentityInput{
+        &function,
+        {"root"},
+        {},
+        1,
+    });
+
+    phoenix::MemoryCacheStore cache_store;
+    phoenix::FunctionCallCacheEntry stale_entry;
+    stale_entry.key = phoenix::CacheKeyBuilder{}.function_call(
+        phoenix::FunctionCallCacheKeyInput{stale_identity});
+    stale_entry.outputs = {
+        phoenix::PortValue{"result", phoenix::RuntimeValue::geometry("stale-cache")},
+    };
+    cache_store.put_function_call(stale_entry);
+
+    int run_count = 0;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "wrong_identity_source",
+        [&run_count](const phoenix::InstructionExecutionFrame& frame) {
+            ++run_count;
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("fresh-run")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+    request.context.function_id = function.id;
+    request.context.call_path = {"root"};
+    request.context.global_seed = 2;
+    request.cache_store = &cache_store;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    return run_count == 1
+        && result.status == phoenix::FunctionExecutionStatus::completed
+        && output_has_geometry_label(result, "result", "fresh-run");
+}
+
 bool run_test(const char* name, bool (*test_fn)())
 {
     const bool passed = test_fn();
@@ -2124,6 +2749,12 @@ int main()
     ok = run_test("multiplexed actor generation routes failed item without actor", test_multiplexed_actor_generation_routes_failed_item_without_actor) && ok;
     ok = run_test("instancing reuses actor generation for matching explicit keys", test_instancing_reuses_actor_generation_for_matching_explicit_keys) && ok;
     ok = run_test("instancing does not reuse without explicit keys", test_instancing_does_not_reuse_without_explicit_keys) && ok;
+    ok = run_test("execution populates cache entries", test_execution_populates_cache_entries) && ok;
+    ok = run_test("execution uses function call cache hit", test_execution_uses_function_call_cache_hit) && ok;
+    ok = run_test("execution uses instruction cache hit", test_execution_uses_instruction_cache_hit) && ok;
+    ok = run_test("function call cache hit matches full execution", test_function_call_cache_hit_matches_full_execution) && ok;
+    ok = run_test("instruction cache hit matches full execution", test_instruction_cache_hit_matches_full_execution) && ok;
+    ok = run_test("execution ignores function cache with wrong identity", test_execution_ignores_function_cache_with_wrong_identity) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

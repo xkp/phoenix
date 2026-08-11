@@ -689,6 +689,12 @@ work kind, function identity, call path, graph/body revision, input fingerprint,
 seed identity, and kind-specific fields such as instruction node id, actor id,
 or explicit instance key.
 
+The first cache identity builder derives deterministic strings from function
+graph shape and runtime inputs. Geometry input fingerprints include the current
+debug geometry identity and actor accumulation owner. This is sufficient for the
+current lightweight geometry wrapper; topology-aware geometry identity remains a
+later replacement once the concrete geometry model is settled.
+
 The first cache store is an in-memory correctness implementation. Production
 storage for heavy geometry payloads remains an implementation concern and should
 avoid unnecessary deep copies.
@@ -699,6 +705,20 @@ the first invalidation bridge: when a function/call/input/seed identity is known
 dirty, cached instruction outputs, function call results, actor subtrees, and
 actor prototypes for that identity can be removed before rerun work is planned
 or applied.
+
+The executor can optionally publish cache entries as it runs. Successful
+instruction executions publish instruction-output entries. Completed function
+invocations publish function-call entries and actor-subtree entries. Cache reads
+can also be enabled during execution: function-call cache hits skip the whole
+function invocation, and instruction-output cache hits skip the matching
+instruction while continuing downstream graph execution.
+
+Cache reuse is valid only when the derived identity matches the uncached work:
+function graph revision, call path, input fingerprint, seed identity, and
+kind-specific actor or instruction fields must agree. The current correctness
+tests compare cached execution against full execution for observable outputs and
+actor hierarchy shape. Deeper geometry equivalence remains tied to the later
+topology-aware geometry identity work.
 
 ## 15. Validation Rules
 

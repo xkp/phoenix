@@ -21,6 +21,9 @@ struct PartialRerunRequest {
     const FunctionDescriptor* function = nullptr;
     std::vector<NodeId> changed_instructions;
     CacheIdentity cache_identity;
+    FunctionCallPath call_path;
+    std::vector<PortValue> inputs;
+    SeedValue global_seed = 0;
     std::unordered_map<NodeId, SeedValue> effective_instruction_seeds;
     std::optional<ActorId> actor_id;
     const CacheStore* cache_store = nullptr;
@@ -41,6 +44,7 @@ public:
 
 private:
     InvalidationPlanner invalidation_planner_;
+    CacheIdentityBuilder cache_identity_builder_;
     CacheKeyBuilder cache_key_builder_;
 };
 

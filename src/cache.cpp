@@ -1,5 +1,6 @@
 #include "phoenix/cache.hpp"
 
+#include <algorithm>
 #include <sstream>
 #include <utility>
 
@@ -15,6 +16,11 @@ void append_field(std::ostringstream& stream, const std::string& value)
 void append_number_field(std::ostringstream& stream, std::uint64_t value)
 {
     append_field(stream, std::to_string(value));
+}
+
+void append_bool_field(std::ostringstream& stream, bool value)
+{
+    append_field(stream, value ? "true" : "false");
 }
 
 void append_separator(std::ostringstream& stream)
@@ -48,6 +54,196 @@ CacheKey make_key(const char* kind, const CacheIdentity& identity)
     append_separator(stream);
     append_identity(stream, identity);
     return CacheKey{stream.str()};
+}
+
+void append_optional_number(std::ostringstream& stream, const std::optional<SeedValue>& value)
+{
+    append_bool_field(stream, value.has_value());
+    if (value.has_value()) {
+        append_separator(stream);
+        append_number_field(stream, *value);
+    }
+}
+
+void append_optional_node(std::ostringstream& stream, const std::optional<NodeId>& value)
+{
+    append_bool_field(stream, value.has_value());
+    if (value.has_value()) {
+        append_separator(stream);
+        append_number_field(stream, *value);
+    }
+}
+
+void append_optional_string(std::ostringstream& stream, const std::optional<std::string>& value)
+{
+    append_bool_field(stream, value.has_value());
+    if (value.has_value()) {
+        append_separator(stream);
+        append_field(stream, *value);
+    }
+}
+
+void append_port_descriptor(std::ostringstream& stream, const PortDescriptor& port)
+{
+    append_field(stream, port.id);
+    append_separator(stream);
+    append_field(stream, port.type);
+    append_separator(stream);
+    append_field(stream, port.direction == PortDirection::input ? "input" : "output");
+}
+
+std::vector<PortDescriptor> sorted_ports(std::vector<PortDescriptor> ports)
+{
+    std::sort(
+        ports.begin(),
+        ports.end(),
+        [](const PortDescriptor& left, const PortDescriptor& right) {
+            if (left.id != right.id) {
+                return left.id < right.id;
+            }
+            if (left.type != right.type) {
+                return left.type < right.type;
+            }
+            return static_cast<int>(left.direction) < static_cast<int>(right.direction);
+        });
+    return ports;
+}
+
+std::vector<EdgeDescriptor> sorted_edges(std::vector<EdgeDescriptor> edges)
+{
+    std::sort(
+        edges.begin(),
+        edges.end(),
+        [](const EdgeDescriptor& left, const EdgeDescriptor& right) {
+            if (left.from_node != right.from_node) {
+                return left.from_node < right.from_node;
+            }
+            if (left.from_port != right.from_port) {
+                return left.from_port < right.from_port;
+            }
+            if (left.to_node != right.to_node) {
+                return left.to_node < right.to_node;
+            }
+            return left.to_port < right.to_port;
+        });
+    return edges;
+}
+
+std::vector<InstructionDescriptor> sorted_instructions(std::vector<InstructionDescriptor> instructions)
+{
+    std::sort(
+        instructions.begin(),
+        instructions.end(),
+        [](const InstructionDescriptor& left, const InstructionDescriptor& right) {
+            return left.id < right.id;
+        });
+    return instructions;
+}
+
+std::vector<PortValue> sorted_port_values(std::vector<PortValue> values)
+{
+    std::sort(
+        values.begin(),
+        values.end(),
+        [](const PortValue& left, const PortValue& right) {
+            return left.port < right.port;
+        });
+    return values;
+}
+
+void append_literal_scalar(std::ostringstream& stream, const LiteralScalar& scalar)
+{
+    if (const auto* value = std::get_if<std::int64_t>(&scalar)) {
+        append_field(stream, "int");
+        append_separator(stream);
+        append_field(stream, std::to_string(*value));
+        return;
+    }
+
+    if (const auto* value = std::get_if<double>(&scalar)) {
+        append_field(stream, "double");
+        append_separator(stream);
+        stream.precision(17);
+        append_field(stream, std::to_string(*value));
+        return;
+    }
+
+    if (const auto* value = std::get_if<bool>(&scalar)) {
+        append_field(stream, "bool");
+        append_separator(stream);
+        append_bool_field(stream, *value);
+        return;
+    }
+
+    append_field(stream, "string");
+    append_separator(stream);
+    append_field(stream, std::get<std::string>(scalar));
+}
+
+void append_literal_value(std::ostringstream& stream, const LiteralValue& literal)
+{
+    if (const auto* scalar = std::get_if<LiteralScalar>(&literal)) {
+        append_field(stream, "scalar");
+        append_separator(stream);
+        append_literal_scalar(stream, *scalar);
+        return;
+    }
+
+    const auto& array = std::get<LiteralArray>(literal);
+    append_field(stream, "array");
+    append_separator(stream);
+    append_number_field(stream, static_cast<std::uint64_t>(array.size()));
+    for (const auto& scalar : array) {
+        append_separator(stream);
+        append_literal_scalar(stream, scalar);
+    }
+}
+
+void append_geometry_value(std::ostringstream& stream, const GeometryValue& geometry)
+{
+    append_field(stream, geometry.debug_label);
+    append_separator(stream);
+    append_optional_string(stream, geometry.accumulation_actor_id);
+}
+
+void append_runtime_value(std::ostringstream& stream, const RuntimeValue& value)
+{
+    append_field(stream, to_string(value.presence));
+    append_separator(stream);
+
+    if (const auto* geometry = value.as_geometry()) {
+        append_field(stream, "geometry");
+        append_separator(stream);
+        append_geometry_value(stream, *geometry);
+        return;
+    }
+
+    if (const auto* collection = value.as_geometry_collection()) {
+        append_field(stream, "geometry_collection");
+        append_separator(stream);
+        append_number_field(stream, static_cast<std::uint64_t>(collection->contributions.size()));
+        for (const auto& contribution : collection->contributions) {
+            append_separator(stream);
+            append_geometry_value(stream, contribution);
+        }
+        return;
+    }
+
+    if (const auto* literal = value.as_literal()) {
+        append_field(stream, "literal");
+        append_separator(stream);
+        append_literal_value(stream, *literal);
+        return;
+    }
+
+    if (const auto* default_value = value.as_default()) {
+        append_field(stream, "default");
+        append_separator(stream);
+        append_field(stream, default_value->source_type);
+        return;
+    }
+
+    append_field(stream, "empty");
 }
 
 bool starts_with(const std::string& value, const std::string& prefix)
@@ -109,6 +305,127 @@ CacheKey CacheKeyBuilder::actor_prototype(const ActorPrototypeCacheKeyInput& inp
     append_separator(stream);
     append_field(stream, input.instance_key);
     return CacheKey{stream.str()};
+}
+
+std::string CacheIdentityBuilder::graph_revision(const FunctionDescriptor& function) const
+{
+    std::ostringstream stream;
+    append_field(stream, "graph_revision_v1");
+    append_separator(stream);
+    append_field(stream, function.id);
+    append_separator(stream);
+    append_bool_field(stream, function.generates_actor);
+    append_separator(stream);
+    append_optional_node(stream, function.output_node_id);
+
+    const auto input_ports = sorted_ports(function.input_ports);
+    append_separator(stream);
+    append_number_field(stream, static_cast<std::uint64_t>(input_ports.size()));
+    for (const auto& port : input_ports) {
+        append_separator(stream);
+        append_port_descriptor(stream, port);
+    }
+
+    const auto output_ports = sorted_ports(function.output_ports);
+    append_separator(stream);
+    append_number_field(stream, static_cast<std::uint64_t>(output_ports.size()));
+    for (const auto& port : output_ports) {
+        append_separator(stream);
+        append_port_descriptor(stream, port);
+    }
+
+    const auto instructions = sorted_instructions(function.instructions);
+    append_separator(stream);
+    append_number_field(stream, static_cast<std::uint64_t>(instructions.size()));
+    for (const auto& instruction : instructions) {
+        append_separator(stream);
+        append_number_field(stream, instruction.id);
+        append_separator(stream);
+        append_field(stream, instruction.kind);
+        append_separator(stream);
+        append_bool_field(stream, instruction.generates_actor);
+        append_separator(stream);
+        append_bool_field(stream, instruction.multiplexes_input);
+        append_separator(stream);
+        append_bool_field(stream, instruction.has_else_port);
+        append_separator(stream);
+        append_bool_field(stream, instruction.failure_is_critical);
+        append_separator(stream);
+        append_bool_field(stream, instruction.enables_instancing);
+        append_separator(stream);
+        append_field(
+            stream,
+            instruction.multiplex_seed_mode == MultiplexSeedMode::one_seed_for_all
+                ? "one_seed_for_all"
+                : "one_seed_each");
+        append_separator(stream);
+        append_optional_number(stream, instruction.local_seed);
+        append_separator(stream);
+        append_optional_string(stream, instruction.called_function_id);
+
+        const auto instruction_inputs = sorted_ports(instruction.input_ports);
+        append_separator(stream);
+        append_number_field(stream, static_cast<std::uint64_t>(instruction_inputs.size()));
+        for (const auto& port : instruction_inputs) {
+            append_separator(stream);
+            append_port_descriptor(stream, port);
+        }
+
+        const auto instruction_outputs = sorted_ports(instruction.output_ports);
+        append_separator(stream);
+        append_number_field(stream, static_cast<std::uint64_t>(instruction_outputs.size()));
+        for (const auto& port : instruction_outputs) {
+            append_separator(stream);
+            append_port_descriptor(stream, port);
+        }
+    }
+
+    const auto edges = sorted_edges(function.edges);
+    append_separator(stream);
+    append_number_field(stream, static_cast<std::uint64_t>(edges.size()));
+    for (const auto& edge : edges) {
+        append_separator(stream);
+        append_number_field(stream, edge.from_node);
+        append_separator(stream);
+        append_field(stream, edge.from_port);
+        append_separator(stream);
+        append_number_field(stream, edge.to_node);
+        append_separator(stream);
+        append_field(stream, edge.to_port);
+    }
+
+    return stream.str();
+}
+
+std::string CacheIdentityBuilder::input_fingerprint(const std::vector<PortValue>& inputs) const
+{
+    std::ostringstream stream;
+    append_field(stream, "input_fingerprint_v1");
+
+    const auto sorted_inputs = sorted_port_values(inputs);
+    append_separator(stream);
+    append_number_field(stream, static_cast<std::uint64_t>(sorted_inputs.size()));
+    for (const auto& input : sorted_inputs) {
+        append_separator(stream);
+        append_field(stream, input.port);
+        append_separator(stream);
+        append_runtime_value(stream, input.value);
+    }
+
+    return stream.str();
+}
+
+CacheIdentity CacheIdentityBuilder::identity(const CacheIdentityInput& input) const
+{
+    CacheIdentity identity;
+    if (input.function != nullptr) {
+        identity.function_id = input.function->id;
+        identity.graph_revision = graph_revision(*input.function);
+    }
+    identity.call_path = input.call_path;
+    identity.input_fingerprint = input_fingerprint(input.inputs);
+    identity.global_seed = input.global_seed;
+    return identity;
 }
 
 void MemoryCacheStore::put_instruction(InstructionCacheEntry entry)

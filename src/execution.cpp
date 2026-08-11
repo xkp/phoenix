@@ -758,6 +758,105 @@ void merge_child_actors(ActorNode& target, const ActorNode& source)
     target.children.insert(target.children.end(), source.children.begin(), source.children.end());
 }
 
+void publish_instruction_cache_entry(
+    CacheWriter* cache_writer,
+    const CacheIdentity& cache_identity,
+    NodeId node_id,
+    std::optional<SeedValue> effective_seed,
+    const std::vector<PortValue>& outputs)
+{
+    if (cache_writer == nullptr) {
+        return;
+    }
+
+    const CacheKeyBuilder key_builder;
+    InstructionCacheKeyInput key_input;
+    key_input.identity = cache_identity;
+    key_input.node_id = node_id;
+    key_input.effective_seed = effective_seed;
+
+    InstructionCacheEntry entry;
+    entry.key = key_builder.instruction_outputs(key_input);
+    entry.outputs = outputs;
+    cache_writer->put_instruction(std::move(entry));
+}
+
+void publish_function_cache_entries(
+    CacheWriter* cache_writer,
+    const CacheIdentity& cache_identity,
+    const FunctionExecutionResult& result)
+{
+    if (cache_writer == nullptr || result.status != FunctionExecutionStatus::completed) {
+        return;
+    }
+
+    const CacheKeyBuilder key_builder;
+    FunctionCallCacheEntry function_entry;
+    function_entry.key = key_builder.function_call(FunctionCallCacheKeyInput{cache_identity});
+    function_entry.outputs = result.outputs;
+    function_entry.actor = result.actor;
+    cache_writer->put_function_call(std::move(function_entry));
+
+    if (!result.actor.has_value()) {
+        return;
+    }
+
+    ActorSubtreeCacheKeyInput subtree_key_input;
+    subtree_key_input.identity = cache_identity;
+    subtree_key_input.actor_id = result.actor->id;
+
+    ActorSubtreeCacheEntry subtree_entry;
+    subtree_entry.key = key_builder.actor_subtree(subtree_key_input);
+    subtree_entry.actor = *result.actor;
+    cache_writer->put_actor_subtree(std::move(subtree_entry));
+}
+
+std::optional<FunctionExecutionResult> cached_function_result(
+    const CacheStore* cache_store,
+    const CacheIdentity& cache_identity)
+{
+    if (cache_store == nullptr) {
+        return std::nullopt;
+    }
+
+    const CacheKeyBuilder key_builder;
+    const auto cached = cache_store->find_function_call(
+        key_builder.function_call(FunctionCallCacheKeyInput{cache_identity}));
+    if (!cached.has_value()) {
+        return std::nullopt;
+    }
+
+    FunctionExecutionResult result;
+    result.outputs = cached->outputs;
+    result.actor = cached->actor;
+    return result;
+}
+
+std::optional<std::vector<PortValue>> cached_instruction_outputs(
+    const CacheStore* cache_store,
+    const CacheIdentity& cache_identity,
+    NodeId node_id,
+    std::optional<SeedValue> effective_seed)
+{
+    if (cache_store == nullptr) {
+        return std::nullopt;
+    }
+
+    const CacheKeyBuilder key_builder;
+    InstructionCacheKeyInput key_input;
+    key_input.identity = cache_identity;
+    key_input.node_id = node_id;
+    key_input.effective_seed = effective_seed;
+
+    const auto cached = cache_store->find_instruction(
+        key_builder.instruction_outputs(key_input));
+    if (!cached.has_value()) {
+        return std::nullopt;
+    }
+
+    return cached->outputs;
+}
+
 std::vector<NodeRuntimeState> ordered_states(const FunctionDescriptor& function, const RuntimeStateMap& states)
 {
     std::vector<NodeRuntimeState> ordered;
@@ -976,6 +1075,15 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
     const ActorId current_actor_id = top_level_invocation
         ? actor_id_from_call_path(request.context.call_path)
         : call_stack.current()->actor_id.value_or(actor_id_from_call_path(request.context.call_path));
+    const CacheIdentity cache_identity = CacheIdentityBuilder{}.identity(CacheIdentityInput{
+        &function,
+        request.context.call_path,
+        request.inputs,
+        request.context.global_seed,
+    });
+    if (auto cached_result = cached_function_result(request.cache_store, cache_identity)) {
+        return *cached_result;
+    }
 
     ActorNode actor;
     actor.id = current_actor_id;
@@ -1122,6 +1230,7 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
 
         InstructionResult instruction_result;
         bool geometry_owner_conflict = false;
+        bool instruction_cache_hit = false;
         const auto input_owner_check = geometry_owner_for(frame.inputs.promised_inputs);
         if (input_owner_check.status == GeometryOwnerCheckStatus::conflict) {
             geometry_owner_conflict = true;
@@ -1134,6 +1243,14 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                 frame.call_stack,
             });
             instruction_result.failure_message = instruction_result.failures.front().message;
+        } else if (auto cached_outputs = cached_instruction_outputs(
+                       request.cache_store,
+                       cache_identity,
+                       node_id,
+                       frame.effective_seed)) {
+            instruction_cache_hit = true;
+            instruction_result.node_id = node_id;
+            instruction_result.produced_outputs = *cached_outputs;
         } else if (instruction->called_function_id.has_value()) {
             if (function_library_ == nullptr) {
                 state.state = InstructionState::completed;
@@ -1201,6 +1318,8 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                 child_request.trace_level = request.trace_level;
                 child_request.scope_trace_sink = request.scope_trace_sink;
                 child_request.instruction_trace_sink = request.instruction_trace_sink;
+                child_request.cache_store = request.cache_store;
+                child_request.cache_writer = request.cache_writer;
                 child_request.parent_scope_index = current_scope_index;
 
                 const auto child_result = run(child_request);
@@ -1304,6 +1423,15 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
             instruction_result.failure_message = instruction_result.failures.back().message;
         }
 
+        if (!instruction_cache_hit && !geometry_owner_conflict && instruction_result.failures.empty()) {
+            publish_instruction_cache_entry(
+                request.cache_writer,
+                cache_identity,
+                node_id,
+                frame.effective_seed,
+                instruction_result.produced_outputs);
+        }
+
         if (!instruction_result.failures.empty()) {
             execution_result.failures.insert(
                 execution_result.failures.end(),
@@ -1328,6 +1456,7 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
     execution_result.outputs = collect_outputs(function, states);
     execution_result.node_states = ordered_states(function, states);
     execution_result.actor = actor;
+    publish_function_cache_entries(request.cache_writer, cache_identity, execution_result);
     return execution_result;
 }
 
