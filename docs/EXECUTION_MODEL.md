@@ -712,6 +712,15 @@ intentionally do not include inputs, outputs, failures, item payloads, or
 geometry payloads. This keeps ordinary partial-rerun discovery practical for
 large graphs and multiplex-heavy runs.
 
+Execution diagnostics are separate from tracing. A run may attach an optional
+diagnostics sink to receive compact performance records after instruction work
+has completed and the centralized publisher commits graph state. Diagnostics
+records may include elapsed time, execution mode, force-run state, requested
+worker count, cache-hit state, output/failure counts, actor delta counts, and
+multiplex item/prototype/reused-instance counts. They must remain payload-free:
+no geometry, full input lists, full output lists, or failure payload copies are
+required for ordinary performance tuning.
+
 Given a dirty call path, scope discovery queries the scope index for the nearest
 actor-owning scope and produces the scope-resolution request needed for a
 rerun. If a cached actor subtree is already available, discovery can report that

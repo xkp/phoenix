@@ -8,6 +8,7 @@
 #include "phoenix/values.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -183,6 +184,37 @@ public:
     virtual void record_publication(FunctionExecutionPublicationRecord publication) = 0;
 };
 
+enum class FunctionExecutionMode {
+    serial,
+    worker,
+};
+
+struct FunctionExecutionDiagnosticsRecord {
+    FunctionId function_id;
+    FunctionCallPath call_path;
+    NodeId node_id = 0;
+    std::string instruction_kind;
+    std::optional<ActorId> actor_id;
+    FunctionExecutionMode execution_mode = FunctionExecutionMode::serial;
+    bool force_run = false;
+    std::size_t requested_worker_count = 1;
+    std::uint64_t elapsed_microseconds = 0;
+    std::size_t produced_output_count = 0;
+    std::size_t failure_count = 0;
+    std::size_t actor_child_delta_count = 0;
+    bool instruction_cache_hit = false;
+    std::size_t multiplex_item_count = 0;
+    std::size_t multiplex_prototype_work_count = 0;
+    std::size_t multiplex_reused_instance_count = 0;
+};
+
+class FunctionExecutionDiagnosticsSink {
+public:
+    virtual ~FunctionExecutionDiagnosticsSink() = default;
+
+    virtual void record_diagnostics(FunctionExecutionDiagnosticsRecord diagnostics) = 0;
+};
+
 struct ExecutionOptions {
     std::size_t worker_count = 1;
 };
@@ -197,6 +229,7 @@ struct FunctionExecutionRequest {
     FunctionExecutionScopeTraceSink* scope_trace_sink = nullptr;
     FunctionExecutionInstructionTraceSink* instruction_trace_sink = nullptr;
     FunctionExecutionPublicationTraceSink* publication_trace_sink = nullptr;
+    FunctionExecutionDiagnosticsSink* diagnostics_sink = nullptr;
     ExecutionOptions options;
     const CacheStore* cache_store = nullptr;
     CacheWriter* cache_writer = nullptr;

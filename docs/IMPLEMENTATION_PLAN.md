@@ -659,39 +659,77 @@ Current status:
 Goal:
 
 - keep the runtime practical under CGAL cost constraints
+- document the performance strategy before concrete CGAL-backed geometry enters
+  the runtime
 
 Tasks:
 
-- audit where exact-number types are truly required
-- minimize copying of CGAL-heavy geometry values
-- prefer lightweight wrappers and references where safe
-- separate algorithmic correctness needs from blanket exactness
-- measure memory and CPU impact of key geometry flows
+- defer runtime implementation until actual CGAL geometry types are introduced
+- document that exact-number types should be used only where correctness
+  requires them
+- document that execution payloads, traces, and cache identities must avoid
+  copying heavy geometry
+- document that cache storage for real geometry should favor immutable handles,
+  shared blobs, or other ownership-aware storage rather than value copying
+- document that threaded workers should return compact result metadata and
+  owned deltas without duplicating full geometry payloads
+- defer meaningful memory and CPU baselines until concrete geometry flows exist
 
 Deliverables:
 
 - numeric strategy notes
-- performance baselines
+- geometry payload ownership notes
+- deferred performance baseline plan
 - targeted optimization backlog
+
+Current status:
+
+- Phase 12 is documentation-only because the runtime still uses lightweight
+  placeholder geometry values rather than CGAL-backed geometry payloads
+- `KNOWN_REQUIREMENTS.md` records the exact-number caution: CGAL exact types are
+  useful but expensive, and the system should avoid unnecessary use, copying,
+  or propagation of exact representations
+- cache and tracing requirements already avoid copying heavy geometry payloads
+  into cache identity, invalidation, or diagnostic records
+- real performance baselines are intentionally deferred until the concrete
+  geometry model and representative CGAL operations exist
 
 ## Phase 13: Tooling, Diagnostics, And Developer Workflow
 
 Goal:
 
 - make the runtime observable and usable during iteration
+- prepare diagnostics for performance tuning without copying heavy geometry
 
 Tasks:
 
-- add structured execution diagnostics
+- add compact structured execution diagnostics
 - add graph validation error reporting
 - add partial-rerun tracing
 - add seed and cache debug visibility
 - add actor hierarchy inspection helpers
+- record instruction timing, execution mode, cache hit state, output/failure
+  counts, actor delta counts, and multiplex item/prototype/reuse counts
+- keep diagnostics opt-in and payload-free
 
 Deliverables:
 
 - developer diagnostics
 - runtime trace tools
+
+Current status:
+
+- `FunctionExecutionRequest` now accepts an optional diagnostics sink
+- instruction diagnostics are emitted by the centralized publication path after
+  work has completed and graph state has been committed
+- compact diagnostics records include function id, call path, node id,
+  instruction kind, actor id, serial/worker execution mode, force-run flag,
+  requested worker count, elapsed microseconds, output/failure counts, actor
+  child delta count, instruction cache-hit state, and multiplex
+  item/prototype/reused-instance counts
+- diagnostics tests cover publication-order records for threaded instructions,
+  cache-hit reporting on the serial fallback path, and multiplex instancing
+  counters
 
 ## Suggested Initial Delivery Slices
 

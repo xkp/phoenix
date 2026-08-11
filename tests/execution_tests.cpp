@@ -37,6 +37,16 @@ public:
     std::vector<phoenix::FunctionExecutionPublicationRecord> records;
 };
 
+class DiagnosticsTrace final : public phoenix::FunctionExecutionDiagnosticsSink {
+public:
+    void record_diagnostics(phoenix::FunctionExecutionDiagnosticsRecord diagnostics) override
+    {
+        records.push_back(std::move(diagnostics));
+    }
+
+    std::vector<phoenix::FunctionExecutionDiagnosticsRecord> records;
+};
+
 PortDescriptor make_input_port(const char* id, const char* type)
 {
     return PortDescriptor{id, type, PortDirection::input};
@@ -993,6 +1003,161 @@ bool test_cache_request_keeps_regular_handlers_serial()
 
     return result.status == phoenix::FunctionExecutionStatus::completed
         && max_active.load() == 1;
+}
+
+bool test_diagnostics_records_threaded_instruction_metrics_in_publication_order()
+{
+    FunctionDescriptor function;
+    function.id = "diagnosed-threaded";
+    function.instructions = {
+        make_instruction(1, "diagnosed_slow", {}, {make_output_port("output", "geometry")}),
+        make_instruction(2, "diagnosed_fast", {}, {make_output_port("output", "geometry")}),
+    };
+
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "diagnosed_slow",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(40));
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("slow")}},
+                std::nullopt,
+            };
+        });
+    registry.register_handler(
+        "diagnosed_fast",
+        [](const phoenix::InstructionExecutionFrame& frame) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("fast")}},
+                std::nullopt,
+            };
+        });
+
+    DiagnosticsTrace diagnostics;
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+    request.context.function_id = function.id;
+    request.context.call_path = {"root"};
+    request.options.worker_count = 2;
+    request.diagnostics_sink = &diagnostics;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && diagnostics.records.size() == 2
+        && diagnostics.records[0].node_id == 1
+        && diagnostics.records[1].node_id == 2
+        && diagnostics.records[0].execution_mode == phoenix::FunctionExecutionMode::worker
+        && diagnostics.records[1].execution_mode == phoenix::FunctionExecutionMode::worker
+        && diagnostics.records[0].requested_worker_count == 2
+        && diagnostics.records[0].produced_output_count == 1
+        && diagnostics.records[1].produced_output_count == 1
+        && diagnostics.records[0].elapsed_microseconds > 0
+        && diagnostics.records[1].elapsed_microseconds > 0;
+}
+
+bool test_diagnostics_records_cache_hits_and_serial_mode()
+{
+    FunctionDescriptor function;
+    function.id = "diagnosed-cache-hit";
+    function.output_ports = {make_output_port("result", "geometry")};
+    function.instructions = {
+        make_instruction(1, "diagnosed_cached_source", {}, {make_output_port("output", "geometry")}),
+        make_instruction(
+            2,
+            "diagnosed_downstream_after_cache",
+            {make_input_port("input", "geometry")},
+            {make_output_port("output", "geometry")}),
+        make_instruction(
+            99,
+            "output",
+            {make_input_port("result", "geometry")},
+            {}),
+    };
+    function.edges = {
+        EdgeDescriptor{1, "output", 2, "input"},
+        EdgeDescriptor{2, "output", 99, "result"},
+    };
+    function.output_node_id = 99;
+
+    phoenix::FunctionExecutionRequest request;
+    request.function = &function;
+    request.context.function_id = function.id;
+    request.context.call_path = {"root"};
+    request.context.global_seed = 44;
+
+    const auto identity = phoenix::CacheIdentityBuilder{}.identity(phoenix::CacheIdentityInput{
+        &function,
+        request.context.call_path,
+        request.inputs,
+        request.context.global_seed,
+    });
+    const auto effective_seed = phoenix::SeedDeriver{}.derive(phoenix::SeedDerivationInput{
+        request.context.global_seed,
+        request.context.call_path,
+        1,
+        std::nullopt,
+    });
+
+    phoenix::MemoryCacheStore cache_store;
+    phoenix::InstructionCacheEntry entry;
+    entry.key = phoenix::CacheKeyBuilder{}.instruction_outputs(
+        phoenix::InstructionCacheKeyInput{identity, 1, effective_seed});
+    entry.outputs = {
+        phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("from-cache")},
+    };
+    cache_store.put_instruction(entry);
+
+    int source_run_count = 0;
+    bool downstream_saw_cached_input = false;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "diagnosed_cached_source",
+        [&source_run_count](const phoenix::InstructionExecutionFrame& frame) {
+            ++source_run_count;
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("uncached")}},
+                std::nullopt,
+            };
+        });
+    registry.register_handler(
+        "diagnosed_downstream_after_cache",
+        [&downstream_saw_cached_input](const phoenix::InstructionExecutionFrame& frame) {
+            const auto* input = find_input(frame, "input");
+            const auto* geometry = input == nullptr ? nullptr : input->as_geometry();
+            downstream_saw_cached_input =
+                geometry != nullptr && geometry->debug_label == "from-cache";
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("downstream")}},
+                std::nullopt,
+            };
+        });
+
+    DiagnosticsTrace diagnostics;
+    request.cache_store = &cache_store;
+    request.options.worker_count = 2;
+    request.diagnostics_sink = &diagnostics;
+
+    const phoenix::FunctionExecutor executor(registry);
+    const auto result = executor.run(request);
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && source_run_count == 0
+        && downstream_saw_cached_input
+        && output_has_geometry_label(result, "result", "downstream")
+        && diagnostics.records.size() == 2
+        && diagnostics.records[0].node_id == 1
+        && diagnostics.records[0].instruction_cache_hit
+        && diagnostics.records[0].execution_mode == phoenix::FunctionExecutionMode::serial
+        && diagnostics.records[0].produced_output_count == 1
+        && diagnostics.records[1].node_id == 2
+        && !diagnostics.records[1].instruction_cache_hit;
 }
 
 bool test_missing_output_leaves_function_output_empty()
@@ -3162,6 +3327,100 @@ bool test_threaded_multiplex_instancing_dispatches_only_prototypes()
             == result.actor->children[0].prototype->prototype_id;
 }
 
+bool test_diagnostics_records_multiplex_instancing_counts()
+{
+    FunctionDescriptor child;
+    child.id = "diagnosed-instanced-actor-item";
+    child.input_ports = {
+        make_input_port("input", "geometry"),
+        make_input_port("instance_key", "string"),
+    };
+    child.generates_actor = true;
+    auto child_capture = make_instruction(
+        7,
+        "capture_diagnosed_instanced_actor_item",
+        {make_input_port("input", "geometry"), make_input_port("instance_key", "string")},
+        {make_output_port("output", "geometry")});
+    child_capture.generates_actor = true;
+    child.instructions = {child_capture};
+
+    FunctionDescriptor parent;
+    parent.id = "diagnosed-instanced-actor-parent";
+    parent.input_ports = {
+        make_input_port("input", "geometry"),
+        make_input_port("instance_key", "string"),
+    };
+    auto call_child = make_instruction(
+        2,
+        "call",
+        {make_input_port("input", "geometry"), make_input_port("instance_key", "string")},
+        {make_output_port("output", "geometry")});
+    call_child.called_function_id = child.id;
+    call_child.multiplexes_input = true;
+    call_child.enables_instancing = true;
+    parent.instructions = {call_child};
+
+    int child_run_count = 0;
+    phoenix::InstructionRegistry registry;
+    registry.register_handler(
+        "capture_diagnosed_instanced_actor_item",
+        [&child_run_count](const phoenix::InstructionExecutionFrame& frame) {
+            ++child_run_count;
+            return phoenix::InstructionResult{
+                frame.inputs.node_id,
+                {phoenix::PortValue{"output", phoenix::RuntimeValue::geometry("ignored")}},
+                std::nullopt,
+            };
+        });
+
+    phoenix::FunctionLibrary functions;
+    functions.register_function(parent);
+    functions.register_function(child);
+
+    DiagnosticsTrace diagnostics;
+    phoenix::FunctionExecutionRequest request;
+    request.function = &parent;
+    request.inputs = {
+        phoenix::PortValue{"input", phoenix::RuntimeValue::geometry_collection({
+            phoenix::GeometryValue{"face-a"},
+            phoenix::GeometryValue{"face-b"},
+            phoenix::GeometryValue{"face-c"},
+            phoenix::GeometryValue{"face-d"},
+        })},
+        phoenix::PortValue{"instance_key", phoenix::RuntimeValue::literal(phoenix::LiteralValue{
+            phoenix::LiteralArray{
+                phoenix::LiteralScalar{std::string{"same-topology"}},
+                phoenix::LiteralScalar{std::string{"other-topology"}},
+                phoenix::LiteralScalar{std::string{"same-topology"}},
+                phoenix::LiteralScalar{std::string{"same-topology"}},
+            },
+        })},
+    };
+    request.context.function_id = parent.id;
+    request.context.call_path = {"root"};
+    request.options.worker_count = 3;
+    request.diagnostics_sink = &diagnostics;
+
+    const phoenix::FunctionExecutor executor(registry, functions);
+    const auto result = executor.run(request);
+
+    bool parent_call_diagnostics_match = false;
+    for (const auto& record : diagnostics.records) {
+        if (record.function_id == parent.id
+            && record.node_id == 2
+            && record.multiplex_item_count == 4
+            && record.multiplex_prototype_work_count == 2
+            && record.multiplex_reused_instance_count == 2
+            && record.actor_child_delta_count == 4) {
+            parent_call_diagnostics_match = true;
+        }
+    }
+
+    return result.status == phoenix::FunctionExecutionStatus::completed
+        && child_run_count == 2
+        && parent_call_diagnostics_match;
+}
+
 bool test_threaded_multiplex_instancing_is_reproducible_under_repeated_runs()
 {
     FunctionDescriptor child;
@@ -4128,6 +4387,8 @@ int main()
     ok = run_test("threaded handler failure uses central publication", test_threaded_handler_failure_uses_central_publication) && ok;
     ok = run_test("force run remains serial with worker count", test_force_run_remains_serial_with_worker_count) && ok;
     ok = run_test("cache request keeps regular handlers serial", test_cache_request_keeps_regular_handlers_serial) && ok;
+    ok = run_test("diagnostics records threaded instruction metrics in publication order", test_diagnostics_records_threaded_instruction_metrics_in_publication_order) && ok;
+    ok = run_test("diagnostics records cache hits and serial mode", test_diagnostics_records_cache_hits_and_serial_mode) && ok;
     ok = run_test("missing output leaves function output empty", test_missing_output_leaves_function_output_empty) && ok;
     ok = run_test("equilibrium force-runs smallest independent pending node", test_equilibrium_force_runs_smallest_independent_pending_node) && ok;
     ok = run_test("forced run includes missing promised input", test_forced_run_includes_missing_promised_input) && ok;
@@ -4158,6 +4419,7 @@ int main()
     ok = run_test("cached multiplexed actor generation commits children in item order", test_cached_multiplexed_actor_generation_commits_children_in_item_order) && ok;
     ok = run_test("instancing reuses actor generation for matching explicit keys", test_instancing_reuses_actor_generation_for_matching_explicit_keys) && ok;
     ok = run_test("threaded multiplex instancing dispatches only prototypes", test_threaded_multiplex_instancing_dispatches_only_prototypes) && ok;
+    ok = run_test("diagnostics records multiplex instancing counts", test_diagnostics_records_multiplex_instancing_counts) && ok;
     ok = run_test("threaded multiplex instancing is reproducible under repeated runs", test_threaded_multiplex_instancing_is_reproducible_under_repeated_runs) && ok;
     ok = run_test("threaded multiplex instancing respects worker count for prototypes", test_threaded_multiplex_instancing_respects_worker_count_for_prototypes) && ok;
     ok = run_test("threaded multiplex failures are canonical despite completion order", test_threaded_multiplex_failures_are_canonical_despite_completion_order) && ok;

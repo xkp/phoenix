@@ -69,6 +69,15 @@ can be made with the full context available.
   numeric representations.
 - Numeric strategy should be designed with explicit awareness of precision
   versus performance tradeoffs.
+- CGAL-specific runtime implementation is deferred until concrete geometry
+  payload types exist; until then, CGAL work should remain strategy and
+  requirement documentation.
+- Execution payloads, traces, cache identities, and invalidation records should
+  not copy future heavy geometry payloads merely for bookkeeping.
+- Future cache storage for concrete geometry should prefer immutable handles,
+  shared blobs, or other ownership-aware storage over repeated value copies.
+- Future threaded geometry work should return compact metadata and owned deltas
+  rather than duplicating full geometry payloads between workers.
 
 ### Missing / Empty / Default
 
@@ -315,6 +324,11 @@ can be made with the full context available.
   without copying inputs, outputs, failures, items, or geometry payloads.
 - Compact publication tracing should record commit-time counts for outputs,
   failures, actor deltas, and cache hits without copying heavy payloads.
+- Execution diagnostics should be opt-in and separate from tracing.
+- Compact diagnostics should record timing, execution mode, force-run state,
+  worker count, cache-hit state, output/failure counts, actor delta counts, and
+  multiplex item/prototype/reused-instance counts without copying geometry or
+  full value payloads.
 - Dirty call paths should resolve through the scope index to the nearest
   actor-owning scope before an executor rerun request is built.
 - Dirty instruction discovery must account for one function/node being executed

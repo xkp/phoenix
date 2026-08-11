@@ -1,6 +1,7 @@
 #include "phoenix/execution.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <future>
 #include <set>
 #include <sstream>
@@ -913,6 +914,9 @@ struct InstructionWorkResult {
     bool instruction_cache_hit = false;
     GeometryOwnerCheck input_owner_check;
     std::vector<ActorNode> actor_children;
+    std::size_t multiplex_item_count = 0;
+    std::size_t multiplex_prototype_work_count = 0;
+    std::size_t multiplex_reused_instance_count = 0;
 };
 
 struct MultiplexItemResult {
@@ -940,6 +944,14 @@ struct CompletedInstructionWork {
     const InstructionDescriptor* instruction = nullptr;
     InstructionExecutionFrame frame;
     InstructionWorkResult result;
+    FunctionExecutionMode execution_mode = FunctionExecutionMode::serial;
+    bool force_run = false;
+    std::uint64_t elapsed_microseconds = 0;
+};
+
+struct TimedInstructionWorkResult {
+    InstructionWorkResult result;
+    std::uint64_t elapsed_microseconds = 0;
 };
 
 std::optional<std::vector<PortValue>> cached_instruction_outputs(
@@ -950,6 +962,7 @@ std::optional<std::vector<PortValue>> cached_instruction_outputs(
 
 bool trace_level_includes(ExecutionTraceLevel actual, ExecutionTraceLevel required) noexcept;
 std::string format_failure_summary(const std::vector<InstructionFailure>& failures);
+TimedInstructionWorkResult execute_instruction_work_timed(const InstructionWorkInput& input);
 MultiplexItemResult execute_child_invocation_item(
     const InstructionWorkInput& input,
     const FunctionDescriptor& child_function,
@@ -1205,6 +1218,9 @@ InstructionWorkResult execute_instruction_work(const InstructionWorkInput& input
             frame.inputs.promised_inputs);
 
         result.instruction_result.node_id = node_id;
+        result.multiplex_item_count = instruction.multiplexes_input
+            ? child_invocations.size()
+            : std::size_t{0};
         std::unordered_map<std::string, ActorPrototypeRef> prototypes_by_instance_key;
         std::vector<MultiplexItemResult> item_results(child_invocations.size());
         if (can_parallelize_child_invocations(input, instruction, child_invocations.size())) {
@@ -1219,6 +1235,12 @@ InstructionWorkResult execute_instruction_work(const InstructionWorkInput& input
                     work_indexes.push_back(classified_invocation.invocation_index);
                 }
             }
+            result.multiplex_prototype_work_count = instruction.multiplexes_input
+                ? work_indexes.size()
+                : std::size_t{0};
+            result.multiplex_reused_instance_count = instruction.multiplexes_input
+                ? child_invocations.size() - work_indexes.size()
+                : std::size_t{0};
 
             for (std::size_t offset = 0; offset < work_indexes.size();) {
                 std::vector<std::pair<std::size_t, std::future<MultiplexItemResult>>> futures;
@@ -1285,6 +1307,13 @@ InstructionWorkResult execute_instruction_work(const InstructionWorkInput& input
                 const auto prototype_it = can_instance
                     ? prototypes_by_instance_key.find(*child_invocation.instance_key)
                     : prototypes_by_instance_key.end();
+                if (instruction.multiplexes_input) {
+                    if (prototype_it == prototypes_by_instance_key.end()) {
+                        ++result.multiplex_prototype_work_count;
+                    } else {
+                        ++result.multiplex_reused_instance_count;
+                    }
+                }
 
                 auto item_result = execute_child_invocation_item(
                     input,
@@ -1379,6 +1408,29 @@ bool commit_completed_instruction_work(
         states,
         execution_result);
 
+    if (request.diagnostics_sink != nullptr) {
+        request.diagnostics_sink->record_diagnostics(FunctionExecutionDiagnosticsRecord{
+            function.id,
+            completed.frame.context.call_path,
+            node_id,
+            completed.instruction->kind,
+            completed.frame.call_stack.current() == nullptr
+                ? std::nullopt
+                : completed.frame.call_stack.current()->actor_id,
+            completed.execution_mode,
+            completed.force_run,
+            request.options.worker_count,
+            completed.elapsed_microseconds,
+            instruction_result.produced_outputs.size(),
+            instruction_result.failures.size(),
+            completed.result.actor_children.size(),
+            completed.result.instruction_cache_hit,
+            completed.result.multiplex_item_count,
+            completed.result.multiplex_prototype_work_count,
+            completed.result.multiplex_reused_instance_count,
+        });
+    }
+
     if (publication.geometry_owner_conflict) {
         execution_result.status = FunctionExecutionStatus::failed;
         execution_result.failure_message = instruction_result.failure_message;
@@ -1393,6 +1445,18 @@ bool commit_completed_instruction_work(
     }
 
     return true;
+}
+
+TimedInstructionWorkResult execute_instruction_work_timed(const InstructionWorkInput& input)
+{
+    const auto started_at = std::chrono::steady_clock::now();
+    TimedInstructionWorkResult timed;
+    timed.result = execute_instruction_work(input);
+    const auto finished_at = std::chrono::steady_clock::now();
+    timed.elapsed_microseconds =
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+            finished_at - started_at).count());
+    return timed;
 }
 
 std::vector<ClassifiedChildInvocation> classify_child_invocations_for_instancing(
@@ -1504,6 +1568,7 @@ MultiplexItemResult execute_child_invocation_item(
     child_request.scope_trace_sink = input.request->scope_trace_sink;
     child_request.instruction_trace_sink = input.request->instruction_trace_sink;
     child_request.publication_trace_sink = input.request->publication_trace_sink;
+    child_request.diagnostics_sink = input.request->diagnostics_sink;
     child_request.options = input.request->options;
     child_request.cache_store = input.request->cache_store;
     child_request.cache_writer = input.request->cache_writer;
@@ -2011,7 +2076,7 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                     });
                 }
 
-                std::vector<std::future<InstructionWorkResult>> futures;
+                std::vector<std::future<TimedInstructionWorkResult>> futures;
                 futures.reserve(prepared.size());
                 for (const auto& work : prepared) {
                     auto work_input = InstructionWorkInput{
@@ -2029,16 +2094,20 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                     futures.push_back(std::async(
                         std::launch::async,
                         [work_input]() {
-                            return execute_instruction_work(work_input);
+                            return execute_instruction_work_timed(work_input);
                         }));
                 }
 
                 completed_batch.reserve(prepared.size());
                 for (std::size_t i = 0; i < prepared.size(); ++i) {
+                    auto timed_result = futures[i].get();
                     completed_batch.push_back(CompletedInstructionWork{
                         prepared[i].instruction,
                         prepared[i].frame,
-                        futures[i].get(),
+                        std::move(timed_result.result),
+                        FunctionExecutionMode::worker,
+                        false,
+                        timed_result.elapsed_microseconds,
                     });
                 }
             }
@@ -2072,10 +2141,7 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                 force_running,
                 seed_deriver_);
 
-            completed_batch.push_back(CompletedInstructionWork{
-                instruction,
-                frame,
-                execute_instruction_work(InstructionWorkInput{
+            auto timed_result = execute_instruction_work_timed(InstructionWorkInput{
                     instruction,
                     &function,
                     function_library_,
@@ -2086,7 +2152,14 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                     current_scope_index,
                     current_actor_id,
                     frame,
-                }),
+                });
+            completed_batch.push_back(CompletedInstructionWork{
+                instruction,
+                frame,
+                std::move(timed_result.result),
+                FunctionExecutionMode::serial,
+                force_running,
+                timed_result.elapsed_microseconds,
             });
         }
 
