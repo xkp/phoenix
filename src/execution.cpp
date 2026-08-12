@@ -904,6 +904,7 @@ struct InstructionWorkInput {
     const CacheIdentity* cache_identity = nullptr;
     std::optional<std::size_t> current_scope_index;
     ActorId current_actor_id;
+    GeometryPublicationLedger* publication_ledger = nullptr;
     InstructionExecutionFrame frame;
 };
 
@@ -1117,6 +1118,7 @@ InstructionPublicationResult publish_instruction_execution(
     }
 
     if (!input.instruction_cache_hit
+        && !input.instruction->consumes_geometry
         && !publication.geometry_owner_conflict
         && instruction_result.failures.empty()) {
         publish_instruction_cache_entry(
@@ -1179,15 +1181,17 @@ InstructionWorkResult execute_instruction_work(const InstructionWorkInput& input
         return result;
     }
 
-    if (auto cached_outputs = cached_instruction_outputs(
+    if (!instruction.consumes_geometry) {
+        if (auto cached_outputs = cached_instruction_outputs(
             input.request->cache_store,
             *input.cache_identity,
             node_id,
             frame.effective_seed)) {
-        result.instruction_cache_hit = true;
-        result.instruction_result.node_id = node_id;
-        result.instruction_result.produced_outputs = *cached_outputs;
-        return result;
+            result.instruction_cache_hit = true;
+            result.instruction_result.node_id = node_id;
+            result.instruction_result.produced_outputs = *cached_outputs;
+            return result;
+        }
     }
 
     if (instruction.called_function_id.has_value()) {
@@ -1362,6 +1366,7 @@ bool commit_completed_instruction_work(
     const FunctionExecutionRequest& request,
     const ActorId& current_actor_id,
     CompletedInstructionWork& completed,
+    GeometryPublicationLedger& geometry_ledger,
     ActorNode& actor,
     RuntimeStateMap& states,
     FunctionExecutionResult& execution_result)
@@ -1388,6 +1393,22 @@ bool commit_completed_instruction_work(
         std::move(instruction_result.produced_outputs),
         output_owner);
     normalize_failures(instruction_result, completed.frame);
+
+    const auto geometry_publication = geometry_ledger.replace_scope(
+        PublicationScopeKey{function.id, completed.frame.context.call_path, node_id},
+        current_actor_id,
+        completed.instruction->consumes_geometry,
+        std::move(instruction_result.geometry_effects));
+    for (const auto& item : geometry_publication.diagnostics) {
+        if (item.code != PublicationDiagnosticCode::failed_item_attempted_consumption) continue;
+        instruction_result.failures.push_back(InstructionFailure{
+            node_id,
+            item.item_key,
+            item.message,
+            completed.frame.inputs.promised_inputs,
+            completed.frame.call_stack,
+        });
+    }
 
     const auto publication = publish_instruction_execution(
         InstructionPublicationInput{
@@ -1573,6 +1594,7 @@ MultiplexItemResult execute_child_invocation_item(
     child_request.cache_store = input.request->cache_store;
     child_request.cache_writer = input.request->cache_writer;
     child_request.parent_scope_index = input.current_scope_index;
+    child_request.publication_ledger = input.publication_ledger;
 
     const auto child_result = input.executor->run(child_request);
     if (child_result.status == FunctionExecutionStatus::completed
@@ -1918,8 +1940,20 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
         return *cached_result;
     }
 
+    GeometryPublicationLedger local_geometry_ledger;
+    auto* geometry_ledger = request.publication_ledger == nullptr
+        ? &local_geometry_ledger
+        : request.publication_ledger;
+
     ActorNode actor;
     actor.id = current_actor_id;
+    for (const auto& input : request.inputs) {
+        const auto* geometry = input.value.as_geometry();
+        if (geometry != nullptr && geometry->geometry != nullptr
+            && geometry->accumulation_actor_id.value_or(current_actor_id) == current_actor_id) {
+            geometry_ledger->set_actor_source(current_actor_id, geometry->geometry);
+        }
+    }
 
     if (call_stack.empty()) {
         call_stack.push(CallFrame{
@@ -2089,6 +2123,7 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                         &cache_identity,
                         current_scope_index,
                         current_actor_id,
+                        geometry_ledger,
                         work.frame,
                     };
                     futures.push_back(std::async(
@@ -2151,6 +2186,7 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                     &cache_identity,
                     current_scope_index,
                     current_actor_id,
+                    geometry_ledger,
                     frame,
                 });
             completed_batch.push_back(CompletedInstructionWork{
@@ -2178,6 +2214,7 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
                     request,
                     current_actor_id,
                     completed,
+                    *geometry_ledger,
                     actor,
                     states,
                     execution_result)) {
@@ -2191,6 +2228,10 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
     }
 
     execution_result.outputs = collect_outputs(function, states);
+    if (const auto assembled = geometry_ledger->assemble_actor(current_actor_id);
+        assembled != nullptr && !assembled->faces().empty()) {
+        actor.geometry = GeometryValue{"published", current_actor_id, assembled};
+    }
     execution_result.node_states = ordered_states(function, states);
     execution_result.actor = actor;
     publish_function_cache_entries(request.cache_writer, cache_identity, execution_result);

@@ -11,9 +11,12 @@ find_package(CGAL REQUIRED)
 add_executable(phoenix_cgal_app
     src/cache.cpp
     src/execution.cpp
+    src/geometry.cpp
     src/graph.cpp
     src/graph_validation.cpp
+    src/labels.cpp
     src/main.cpp
+    src/publication.cpp
     src/randomness.cpp
     src/values.cpp
 )
@@ -52,9 +55,73 @@ else()
 endif()
 
 add_executable(phoenix_value_tests
+    src/geometry.cpp
+    src/labels.cpp
     src/values.cpp
     tests/value_tests.cpp
 )
+
+add_executable(phoenix_label_tests
+    src/graph.cpp
+    src/labels.cpp
+    tests/label_tests.cpp
+)
+
+target_include_directories(phoenix_label_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+if(MSVC)
+    target_compile_options(phoenix_label_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_label_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_geometry_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/graph.cpp
+    tests/geometry_tests.cpp
+)
+
+target_include_directories(phoenix_geometry_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+if(MSVC)
+    target_compile_options(phoenix_geometry_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_geometry_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_working_geometry_tests
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/working_geometry.cpp
+    tests/working_geometry_tests.cpp
+)
+
+target_include_directories(phoenix_working_geometry_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(phoenix_working_geometry_tests PRIVATE CGAL::CGAL)
+
+if(MSVC)
+    target_compile_options(phoenix_working_geometry_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_working_geometry_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_publication_tests
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/publication.cpp
+    tests/publication_tests.cpp
+)
+
+target_include_directories(phoenix_publication_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+if(MSVC)
+    target_compile_options(phoenix_publication_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_publication_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 target_include_directories(phoenix_value_tests
     PRIVATE
@@ -70,7 +137,10 @@ endif()
 add_executable(phoenix_execution_tests
     src/cache.cpp
     src/execution.cpp
+    src/publication.cpp
     src/graph.cpp
+    src/geometry.cpp
+    src/labels.cpp
     src/randomness.cpp
     src/values.cpp
     tests/execution_tests.cpp
@@ -106,6 +176,8 @@ endif()
 
 add_executable(phoenix_cache_tests
     src/cache.cpp
+    src/geometry.cpp
+    src/labels.cpp
     src/values.cpp
     tests/cache_tests.cpp
 )
@@ -125,6 +197,8 @@ add_executable(phoenix_partial_run_tests
     src/cache.cpp
     src/graph.cpp
     src/invalidation.cpp
+    src/geometry.cpp
+    src/labels.cpp
     src/partial_run.cpp
     src/values.cpp
     tests/partial_run_tests.cpp
@@ -143,6 +217,8 @@ endif()
 
 add_executable(phoenix_scene_update_tests
     src/scene_update.cpp
+    src/geometry.cpp
+    src/labels.cpp
     src/values.cpp
     tests/scene_update_tests.cpp
 )
@@ -161,7 +237,10 @@ endif()
 add_executable(phoenix_partial_run_apply_tests
     src/cache.cpp
     src/execution.cpp
+    src/publication.cpp
     src/graph.cpp
+    src/geometry.cpp
+    src/labels.cpp
     src/partial_run_apply.cpp
     src/randomness.cpp
     src/scene_update.cpp
@@ -183,7 +262,10 @@ endif()
 add_executable(phoenix_partial_run_scope_tests
     src/cache.cpp
     src/execution.cpp
+    src/publication.cpp
     src/graph.cpp
+    src/geometry.cpp
+    src/labels.cpp
     src/partial_run_apply.cpp
     src/partial_run_scope.cpp
     src/randomness.cpp
@@ -206,7 +288,10 @@ endif()
 add_executable(phoenix_partial_run_scope_index_tests
     src/cache.cpp
     src/execution.cpp
+    src/publication.cpp
     src/graph.cpp
+    src/geometry.cpp
+    src/labels.cpp
     src/partial_run_scope_index.cpp
     src/randomness.cpp
     src/values.cpp
@@ -227,7 +312,10 @@ endif()
 add_executable(phoenix_partial_run_scope_discovery_tests
     src/cache.cpp
     src/execution.cpp
+    src/publication.cpp
     src/graph.cpp
+    src/geometry.cpp
+    src/labels.cpp
     src/invalidation.cpp
     src/partial_run.cpp
     src/partial_run_scope.cpp
@@ -252,7 +340,10 @@ endif()
 add_executable(phoenix_partial_run_instruction_index_tests
     src/cache.cpp
     src/execution.cpp
+    src/publication.cpp
     src/graph.cpp
+    src/geometry.cpp
+    src/labels.cpp
     src/partial_run_instruction_index.cpp
     src/partial_run_scope_index.cpp
     src/randomness.cpp
@@ -274,7 +365,10 @@ endif()
 add_executable(phoenix_partial_run_dirty_instruction_discovery_tests
     src/cache.cpp
     src/execution.cpp
+    src/publication.cpp
     src/graph.cpp
+    src/geometry.cpp
+    src/labels.cpp
     src/invalidation.cpp
     src/partial_run.cpp
     src/partial_run_dirty_instruction_discovery.cpp

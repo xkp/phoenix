@@ -19,7 +19,19 @@ around the most constraining requirements first:
 - Prefer immutable shared context and isolated execution state.
 - Build for partial reruns from the beginning.
 - Keep actor hierarchy and scene update semantics explicit.
-- Avoid premature commitment to concrete CGAL-heavy data layouts.
+- Keep canonical runtime geometry independent of exact CGAL working types.
+
+## Production Port Track
+
+The production solver review established a concrete geometry porting track.
+`PORTING_IMPLEMENTATION_PLAN.md` is the authoritative sequence for labels,
+runtime geometry, exact/inexact conversion, face consumption, preserved geometry
+kernels, golden fixtures, and legacy project migration.
+
+That track is now active and supersedes treating concrete geometry as a distant
+Phase 12-only concern. Work in the port track must continue to use the executor,
+actor, cache, partial-rerun, and deterministic publication foundations described
+in this document.
 
 ## Phase 0: Stabilize The Specification
 
@@ -139,13 +151,21 @@ Deliverables:
 
 Current status:
 
-- completed for the first deterministic executor slice
+- completed for the placeholder deterministic executor slice
 - runtime values distinguish missing, empty, present, and defaulted states
 - literal values, geometry wrappers, port fulfillment, and virtual geometry
   aggregation scaffolding are implemented
 - geometry values now carry optional actor accumulation ownership
 - virtual geometry aggregation reports cross-actor owner conflicts instead of
   treating incompatible contributions as one payload
+
+Concrete geometry work continues in production port Phases P2 through P4:
+
+- immutable labels and eager label linking
+- canonical immutable 3D runtime topology with `double` coordinates
+- run-wide geometry element identity
+- kernel-specific working-geometry adapters
+- versioned validation and repair
 
 ## Phase 4: Implement Deterministic Execution Core
 
@@ -330,10 +350,9 @@ Current status:
 Remaining Phase 7 work:
 
 - implement concrete transform and pivot behavior
-- define actor-local geometry payload and accumulation rules after geometry
-  representation is settled
-- connect owned geometry values to the eventual concrete actor-local geometry
-  payload representation
+- integrate canonical runtime geometry and the contribution/consumption
+  publication ledger from port Phases P3 and P5
+- connect owned geometry values to concrete immutable actor-local payloads
 - define explicit ownership-changing operations, if any are needed
 - define actor naming policy
 - refine actor id policy for later partial-rerun retention
@@ -477,7 +496,8 @@ Remaining Phase 9 work:
 - surface changed instruction identity from editor/diagnostics into dirty
   instruction discovery
 - define and implement `item` and `value` trace payload policies
-- define geometry-only scene patch operations once geometry payloads settle
+- implement geometry-only scene updates through the contribution/consumption
+  publication ledger in port Phases P5 and P7
 - define minimal dirty-instruction/subgraph execution within a rerun scope
 
 ## Phase 10: Implement Caching
@@ -547,8 +567,11 @@ Current status:
 Remaining Phase 10 work:
 
 - define production storage for heavy geometry payloads
-- replace v1 debug-label geometry fingerprints with topology-aware geometry
-  identity
+- replace v1 debug-label geometry fingerprints with the canonical
+  topology/label-aware runtime geometry identity from port Phase P3
+- include label-registry, kernel/adapter, geometry-schema, and conversion-policy
+  versions in concrete geometry cache identity
+- cache generated geometry and consumed source-face identities together
 - extend cache/full-rerun equivalence validation once concrete geometry payloads
   and topology-aware identity are available
 
@@ -659,40 +682,40 @@ Current status:
 Goal:
 
 - keep the runtime practical under CGAL cost constraints
-- document the performance strategy before concrete CGAL-backed geometry enters
-  the runtime
+- implement and measure the accepted boundary between canonical runtime geometry
+  and instruction-specific CGAL working geometry
 
 Tasks:
 
-- defer runtime implementation until actual CGAL geometry types are introduced
-- document that exact-number types should be used only where correctness
-  requires them
-- document that execution payloads, traces, and cache identities must avoid
-  copying heavy geometry
-- document that cache storage for real geometry should favor immutable handles,
-  shared blobs, or other ownership-aware storage rather than value copying
-- document that threaded workers should return compact result metadata and
-  owned deltas without duplicating full geometry payloads
-- defer meaningful memory and CPU baselines until concrete geometry flows exist
+- implement canonical non-exact runtime geometry through the production port
+  track
+- keep exact/instruction-specific CGAL working geometry inside worker
+  boundaries
+- promote and demote through versioned kernel adapters
+- avoid copying heavy geometry in execution payloads, traces, cache identity,
+  and invalidation records
+- store cached runtime geometry through immutable shared payloads or other
+  ownership-aware storage
+- return compact publication metadata and owned deltas from workers
+- establish memory and CPU baselines during extrusion hardening in port Phase P8
 
 Deliverables:
 
-- numeric strategy notes
-- geometry payload ownership notes
-- deferred performance baseline plan
+- versioned runtime/working numeric strategy
+- concrete geometry payload ownership implementation
+- extrusion performance baseline
 - targeted optimization backlog
 
 Current status:
 
-- Phase 12 is documentation-only because the runtime still uses lightweight
-  placeholder geometry values rather than CGAL-backed geometry payloads
+- the existing runtime still uses lightweight placeholder geometry values
+- concrete implementation is now active in `PORTING_IMPLEMENTATION_PLAN.md`
+  rather than deferred
 - `KNOWN_REQUIREMENTS.md` records the exact-number caution: CGAL exact types are
-  useful but expensive, and the system should avoid unnecessary use, copying,
-  or propagation of exact representations
+  kernel-local and must not be propagated through ordinary graph values
 - cache and tracing requirements already avoid copying heavy geometry payloads
   into cache identity, invalidation, or diagnostic records
-- real performance baselines are intentionally deferred until the concrete
-  geometry model and representative CGAL operations exist
+- extrusion is the first operation used to establish real performance baselines
 
 ## Phase 13: Tooling, Diagnostics, And Developer Workflow
 
@@ -768,14 +791,9 @@ Current status:
 
 ## Immediate Next Step
 
-Start implementation by finishing the Phase 1 interface alignment against the
-current headers.
+Follow Phase P1 of `PORTING_IMPLEMENTATION_PLAN.md`:
 
-Recommended first code task:
-
-- audit `include/phoenix/*.hpp` against `EXECUTION_MODEL.md`
-- add the missing slice-one execution boundaries
-- keep actor, cache, and partial-rerun types skeletal but compatible with their
-  later requirements
-- then implement the deterministic single-run execution engine behind those
-  interfaces
+- perform the read-only extrusion source-boundary audit
+- identify trusted kernel, shared support, and legacy adapter files
+- establish the smallest production fixture and oracle procedure
+- do not copy kernel code until those boundaries are recorded

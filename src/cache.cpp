@@ -204,6 +204,12 @@ void append_geometry_value(std::ostringstream& stream, const GeometryValue& geom
     append_field(stream, geometry.debug_label);
     append_separator(stream);
     append_optional_string(stream, geometry.accumulation_actor_id);
+    append_separator(stream);
+    append_bool_field(stream, geometry.geometry != nullptr);
+    if (geometry.geometry != nullptr) {
+        append_separator(stream);
+        append_number_field(stream, geometry.geometry->fingerprint());
+    }
 }
 
 void append_runtime_value(std::ostringstream& stream, const RuntimeValue& value)
@@ -353,6 +359,8 @@ std::string CacheIdentityBuilder::graph_revision(const FunctionDescriptor& funct
         append_separator(stream);
         append_bool_field(stream, instruction.enables_instancing);
         append_separator(stream);
+        append_bool_field(stream, instruction.consumes_geometry);
+        append_separator(stream);
         append_field(
             stream,
             instruction.multiplex_seed_mode == MultiplexSeedMode::one_seed_for_all
@@ -362,6 +370,15 @@ std::string CacheIdentityBuilder::graph_revision(const FunctionDescriptor& funct
         append_optional_number(stream, instruction.local_seed);
         append_separator(stream);
         append_optional_string(stream, instruction.called_function_id);
+
+        auto referenced_labels = instruction.referenced_label_uids;
+        std::sort(referenced_labels.begin(), referenced_labels.end());
+        append_separator(stream);
+        append_number_field(stream, static_cast<std::uint64_t>(referenced_labels.size()));
+        for (const auto& uid : referenced_labels) {
+            append_separator(stream);
+            append_field(stream, uid);
+        }
 
         const auto instruction_inputs = sorted_ports(instruction.input_ports);
         append_separator(stream);

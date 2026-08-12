@@ -5,6 +5,7 @@
 #include "phoenix/common.hpp"
 #include "phoenix/graph.hpp"
 #include "phoenix/randomness.hpp"
+#include "phoenix/publication.hpp"
 #include "phoenix/values.hpp"
 
 #include <cstddef>
@@ -87,6 +88,7 @@ struct InstructionResult {
     std::vector<PortValue> produced_outputs;
     std::optional<std::string> failure_message;
     std::vector<InstructionFailure> failures;
+    std::vector<GeometryItemEffect> geometry_effects;
 };
 
 struct InstructionExecutionFrame {
@@ -234,6 +236,7 @@ struct FunctionExecutionRequest {
     const CacheStore* cache_store = nullptr;
     CacheWriter* cache_writer = nullptr;
     std::optional<std::size_t> parent_scope_index;
+    GeometryPublicationLedger* publication_ledger = nullptr;
 };
 
 struct FunctionExecutionResult {

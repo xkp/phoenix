@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phoenix/common.hpp"
+#include "phoenix/geometry.hpp"
 
 #include <optional>
 #include <string>
@@ -19,6 +20,7 @@ struct DefaultValue final {
 struct GeometryValue {
     std::string debug_label;
     std::optional<ActorId> accumulation_actor_id;
+    CanonicalGeometryRef geometry;
 };
 
 struct GeometryCollectionValue {
@@ -53,6 +55,10 @@ struct RuntimeValue {
     [[nodiscard]] static RuntimeValue empty();
     [[nodiscard]] static RuntimeValue geometry(
         std::string debug_label,
+        std::optional<ActorId> accumulation_actor_id = std::nullopt);
+    [[nodiscard]] static RuntimeValue geometry(
+        CanonicalGeometryRef geometry,
+        std::string debug_label = {},
         std::optional<ActorId> accumulation_actor_id = std::nullopt);
     [[nodiscard]] static RuntimeValue geometry_collection(std::vector<GeometryValue> contributions);
     [[nodiscard]] static RuntimeValue literal(LiteralValue value);

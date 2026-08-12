@@ -23,13 +23,20 @@ Version one includes:
 - actor-local geometry accumulation
 - instancing through reusable actor prototypes
 - cache-backed partial reruns organized around actor subtrees
+- eager label linking into one immutable run-scoped registry
+- immutable concrete runtime geometry using `double` coordinates
+- instruction-local exact/inexact working geometry
+- explicit geometry contribution and face-consumption publication
 
 Version one does not include:
 
 - external process execution
 - general POCO/object payloads
 - loop semantics
-- concrete mesh container standardization in this document
+- holes in runtime faces
+- material assembly during the initial geometry-kernel port
+- lazy label/function linking
+- legacy production RNG sequence compatibility
 
 ## 2. Core Concepts
 
@@ -101,6 +108,30 @@ current function invocation. In version one, this means:
 
 An instruction becomes ready when all promised inputs have been fulfilled.
 
+### 2.4 Label Linking And Registry Ownership
+
+One top-level run owns one canonical label registry.
+
+Persisted label UIDs are discovered in every reachable function during eager
+linking. The linker registers immutable label definitions, assigns deterministic
+non-negative run-local `LabelId` values, resolves function-local symbols, and
+freezes the registry before instruction workers begin.
+
+Rules:
+
+- one UID maps to one `LabelId`
+- one UID has one semantic definition in a run
+- identical duplicate definitions reuse the existing `LabelId`
+- differing definitions for one UID are fatal before execution
+- registered definitions cannot be mutated during the run
+- geometry-carried label ids remain valid across function boundaries
+- function-local visibility controls symbolic lookup, not registry validity
+- no instruction creates a new label during version-one execution
+- negative values are reserved for named sentinel or kernel-private meanings
+
+The registry belongs to the immutable shared run context. Partial reruns use the
+same registry. The registry exposes a semantic fingerprint for cache identity.
+
 ## 3. Runtime Values
 
 ### 3.1 Value Families
@@ -133,20 +164,68 @@ Default is actual data created by the engine from instruction configuration.
 
 ### 3.3 Geometry Representation
 
-This document does not standardize the concrete in-memory mesh container for
-version one.
+Phoenix has one canonical immutable 3D runtime geometry representation. Its
+concrete container layout remains an implementation choice, but it must model:
 
-However, the execution model assumes:
+- `double` vertex coordinates
+- directed halfedges and opposite relationships
+- faces and orientation
+- disconnected components
+- non-manifold relationships
+- face labels
+- distinct labels on opposite halfedges
+- run-wide unique vertex, edge/halfedge, and face ids
 
-- geometry can be passed as a single runtime value
-- multiple geometry inputs may be logically compounded into a virtual mesh
-- multiplexing may also process geometry item-by-item
-- geometry values may carry an actor accumulation owner once actor generation is
-  active
-- geometry values with different actor accumulation owners must not be merged as
-  one payload
+Former-2D coordinates map to `(x, 0, z)` on the `y = 0` plane. Holes are not
+supported in the initial port and fail when they cannot be represented safely.
 
-The exact container type is an implementation concern.
+Geometry values may carry an actor accumulation owner. Payload/backing-store
+ownership, actor ownership, prototype sharing, and selection/subgeometry
+references are separate concepts. Geometry with different actor owners must not
+be merged as one payload.
+
+Published runtime geometry is immutable. Selection values use stable runtime
+element references rather than CGAL handles.
+
+Geometry element ids are globally unique within one run. Worker execution may
+return invalid ids for newly created topology. The centralized publisher assigns
+new ids in canonical publication order. Unchanged elements retain their ids only
+when an adapter can prove identity; split, merged, and new elements receive new
+ids.
+
+Runtime geometry has deterministic serialization and a topology-aware
+fingerprint covering coordinates, topology, orientation, and face/directed-edge
+labels. Actor ownership participates separately where cache semantics require
+it.
+
+### 3.4 Kernel Working Geometry
+
+A geometry kernel receives instruction-specific working geometry prepared from
+canonical runtime geometry. The working representation may use exact or
+inexact CGAL types according to that kernel's established implementation.
+
+Working geometry exists only inside isolated instruction work. CGAL handles and
+temporary working objects do not cross the worker/publication boundary and are
+not ordinary cache values.
+
+The kernel adapter contract defines:
+
+- accepted input topology
+- promotion from runtime geometry
+- kernel invocation shape
+- demotion to runtime geometry
+- label and source-element mapping
+- validation and repair policy version
+
+The runtime supports non-manifold topology, but an adapter may reject it for a
+kernel that requires manifold input. That rejection is an item-scoped failure
+eligible for `else` handling.
+
+Demotion performs mandatory structural/numeric validation. Geometry-producing
+instructions then apply the versioned runtime repair policy outside trusted
+kernels. Initial repair uses a configurable absolute tolerance, may merge near
+vertices, and may remove zero-length edges or zero-area faces with diagnostics.
+The initial tolerance is selected from extrusion fixtures.
 
 ## 4. Ports And Typing
 
@@ -285,6 +364,36 @@ Rules:
 - an unfulfilled output port returns an empty value
 - the output node may expose partial state when the function ends
 
+### 7.3 Geometry Contributions And Face Consumption
+
+Instruction types declare statically whether they consume input faces.
+Consumption means that successfully processed source faces are omitted from
+final actor geometry because generated geometry replaces them. Non-consuming
+instructions such as selection may return original faces without removing them.
+
+Consumption never mutates an input value. Each per-item work result may carry:
+
+- generated immutable runtime geometry
+- stable identities of source faces consumed by that item
+- failures and `else` payloads
+- optional source-element provenance
+
+A successful consuming item consumes its source face. Failed, skipped, or
+`else`-routed items do not. A consuming implementation that reports success but
+unexpectedly generates no replacement still consumes the source and emits a
+diagnostic.
+
+Multiple branches may consume one source face. Canonical publication removes
+the original once and preserves every successfully generated replacement.
+Other branches remain free to read the immutable original graph value.
+
+Consumption follows the source geometry's actor accumulation owner, even when
+the consuming instruction executes after returning through a function boundary
+or in a different actor context.
+
+The centralized publisher assigns ids to new elements and commits generated
+geometry, failures, and consumption effects in canonical item/instruction order.
+
 ## 8. Error Handling And `else`
 
 Every instruction exposes an `else` output port in version one.
@@ -354,10 +463,11 @@ visible results are committed only after the item results are merged into a
 canonical order. Normal outputs, `else` outputs, failures, actor children, and
 cache entries must not depend on item completion order.
 
-For child function calls, each multiplex item produces an item result slot. The
-slot can contain child outputs, failures, actor child deltas, and instancing
-prototype updates. The parent instruction merges those slots in canonical item
-order before graph publication.
+For child function calls and geometry handlers, each multiplex item produces an
+item result slot. The slot can contain child outputs, failures, actor child
+deltas, instancing prototype updates, generated geometry, and consumed source
+faces. The parent instruction merges those slots in canonical item order before
+graph publication.
 
 When multiplex threading and instancing are both enabled, the runtime should
 classify item candidates before dispatching heavy work. Each candidate computes
@@ -388,6 +498,10 @@ can emit its own scope, instruction, or publication records.
 
 Version one does not fully standardize what counts as an item beyond the general
 idea of per-face or per-element geometry processing.
+
+The initial major geometry kernels—extrusion, partition, and inset—multiplex
+once per input face unless their accepted kernel contract explicitly defines a
+different unit.
 
 ## 10. Reproducibility And Randomness
 
@@ -549,8 +663,14 @@ Geometry with no existing actor owner accumulates into the current actor
 context naturally. Combining geometry from different actor owners is invalid
 unless a later explicit ownership-changing operation defines otherwise.
 
-The concrete runtime representation for actor-local geometry accumulation is
-deferred until the geometry payload model is settled.
+Actor-local geometry uses canonical immutable runtime payloads. Actor assembly
+does not mutate those payloads in place.
+
+Each actor retains a publication ledger keyed by execution/rerun scope. The
+ledger records immutable geometry contributions and successful source-face
+consumption effects. Final actor geometry is derived by combining contributions
+and removing consumed originals once. This prevents overlap while preserving
+the original contributions needed for cache replay and partial-rerun rollback.
 
 ### 11.4 Actor Contents
 
@@ -665,8 +785,13 @@ A partial rerun must produce the same final scene as a full rerun from scratch.
 The first scene update implementation supports structural subtree replacement
 by actor id. Replacing a subtree preserves unaffected ancestors and siblings,
 including their ids and sibling order. Replacing the root actor is also valid
-when the rerun scope is the whole scene root. Geometry-only patching remains
-deferred until the concrete actor geometry payload model is settled.
+when the rerun scope is the whole scene root. Concrete geometry-only updates use
+the actor publication ledger once geometry contributions are available.
+
+Before applying a rerun result for a scope, actor assembly removes the prior
+scope's geometry contributions and consumption effects. It then applies the new
+contributions and effects. If the new result no longer consumes a face, the
+unaffected immutable original contribution becomes visible again.
 
 Partial rerun application first supports the cache-backed case. If a partial
 rerun plan reports an actor-subtree cache hit, the applier rechecks that cache
@@ -761,6 +886,10 @@ including:
 - function body identity
 - graph wiring identity
 - relevant function call path or actor subtree identity
+- label-registry fingerprint
+- kernel and adapter version
+- runtime geometry schema version
+- conversion and repair policy version
 
 Cache reuse must not break determinism and must not preserve stale actor
 hierarchy data after invalidation.
@@ -777,14 +906,19 @@ seed identity, and kind-specific fields such as instruction node id, actor id,
 or explicit instance key.
 
 The first cache identity builder derives deterministic strings from function
-graph shape and runtime inputs. Geometry input fingerprints include the current
-debug geometry identity and actor accumulation owner. This is sufficient for the
-current lightweight geometry wrapper; topology-aware geometry identity remains a
-later replacement once the concrete geometry model is settled.
+graph shape and runtime inputs. Placeholder/debug geometry identity is replaced
+by the canonical topology-aware runtime geometry fingerprint when concrete
+geometry enters the executor. Actor accumulation ownership remains part of the
+effective input identity.
 
 The first cache store is an in-memory correctness implementation. Production
 storage for heavy geometry payloads remains an implementation concern and should
 avoid unnecessary deep copies.
+
+Concrete cached geometry uses canonical immutable runtime payloads. Temporary
+kernel working geometry is not cached initially. A cached consuming result also
+stores its consumed source-face identities and any publication-ledger effects
+required to reproduce the original result.
 
 The in-memory cache store supports explicit removal of individual entries and
 identity-scoped clearing across all cache families. Identity-scoped clearing is
@@ -804,8 +938,13 @@ Cache reuse is valid only when the derived identity matches the uncached work:
 function graph revision, call path, input fingerprint, seed identity, and
 kind-specific actor or instruction fields must agree. The current correctness
 tests compare cached execution against full execution for observable outputs and
-actor hierarchy shape. Deeper geometry equivalence remains tied to the later
-topology-aware geometry identity work.
+actor hierarchy shape. Concrete geometry tests additionally compare canonical
+runtime topology, labels, and consumption effects.
+
+During the initial port, changes to graph structure, labels, kernels, adapters,
+runtime geometry schema, or conversion policy may invalidate the full cache.
+Parameter, input, and seed identities still support dependent invalidation and
+parameter-driven partial reruns.
 
 ## 15. Validation Rules
 
@@ -819,20 +958,40 @@ A version one graph must satisfy at least the following:
 - `else` port connections target instructions that expose `else`
 - equilibrium cycles where every pending node depends on another pending node are
   rejected as invalid
+- every persisted label UID resolves during eager linking
+- one label UID does not have conflicting definitions
+- instruction topology requirements are known before kernel invocation
+- consuming instructions can identify their source faces with stable runtime
+  element references
 
-Additional validation may be added by implementation.
+Validation severity is:
+
+- fatal before execution for conflicting label definitions, unreadable required
+  graph data, unsupported persisted formats, or graph structure that cannot be
+  executed coherently
+- function/instruction or item failure for missing profiles, invalid input
+  topology, incompatible geometry, unavailable optional assets, or kernel
+  failure
+- warning/diagnostic for recoverable repair, ignored optional data, or other
+  conditions with explicitly defined continuation behavior
+
+Independent valid work may continue after instruction/function failures under
+the normal `else` and critical-failure rules. Fatal linking failures prevent the
+run from starting.
 
 ## 16. Version One Implementation Notes
 
 The following are intentionally left open for implementation:
 
-- concrete mesh and geometry collection types
+- concrete container layout for the required runtime topology
 - literal storage layout
 - exact internal representation of missing versus empty versus present states
 - exact seed derivation algorithm
 - exact virtual mesh materialization strategy
 - exact actor id derivation strategy
 - exact cache key encoding
+- initial numeric value of the versioned absolute repair tolerance
+- exact serialization format for immutable runtime geometry
 
 These are not open behavioral questions. They are implementation choices that
 must preserve the semantics defined in this document.

@@ -39,9 +39,11 @@ struct InstructionDescriptor {
     bool has_else_port = true;
     bool failure_is_critical = false;
     bool enables_instancing = false;
+    bool consumes_geometry = false;
     MultiplexSeedMode multiplex_seed_mode = MultiplexSeedMode::one_seed_for_all;
     std::optional<SeedValue> local_seed;
     std::optional<FunctionId> called_function_id;
+    std::vector<LabelUid> referenced_label_uids;
 };
 
 struct FunctionDescriptor {

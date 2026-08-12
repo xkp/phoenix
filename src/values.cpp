@@ -100,7 +100,19 @@ RuntimeValue RuntimeValue::geometry(
 {
     RuntimeValue value;
     value.presence = ValuePresence::present;
-    value.payload = GeometryValue{std::move(debug_label), std::move(accumulation_actor_id)};
+    value.payload = GeometryValue{std::move(debug_label), std::move(accumulation_actor_id), {}};
+    return value;
+}
+
+RuntimeValue RuntimeValue::geometry(
+    CanonicalGeometryRef geometry,
+    std::string debug_label,
+    std::optional<ActorId> accumulation_actor_id)
+{
+    RuntimeValue value;
+    value.presence = ValuePresence::present;
+    value.payload = GeometryValue{
+        std::move(debug_label), std::move(accumulation_actor_id), std::move(geometry)};
     return value;
 }
 

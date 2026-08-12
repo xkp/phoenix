@@ -60,24 +60,97 @@ can be made with the full context available.
 - Arrays should be supported as types.
 - Version one should support at least basic literal values.
 
+### Labels
+
+- Labels are fundamental geometry semantics, not optional display metadata.
+- A top-level run owns one canonical label registry shared by every function
+  invocation, actor, worker, cache operation, and partial rerun in that run.
+- Persisted string label UIDs map one-to-one to compact run-local integer
+  `LabelId` values.
+- Ordinary registry labels use non-negative integer ids.
+- A label id remains stable and valid for the entire run.
+- Label definitions are immutable after registration.
+- One UID resolves to exactly one semantic definition in one run.
+- Identical definitions with the same UID are deduplicated.
+- Differing definitions with the same UID are fatal before execution and should
+  normally be caught as migration/linking errors.
+- Functions may expose local label symbols and visibility, but geometry-carried
+  label ids remain globally valid when geometry crosses function boundaries.
+- A label that is unknown to a receiving function is absent from that
+  function's local symbol table; its registry definition remains valid.
+- Rename operations may replace labels unknown to the current function with a
+  known label without repairing or changing registry identity.
+- Version one eagerly discovers labels in all reachable functions, resolves
+  label UIDs during linking, and freezes the registry before workers begin.
+- Version one does not create labels during instruction execution.
+- Label allocation must not depend on worker scheduling.
+- The label registry must provide a semantic fingerprint for cache identity.
+- Label provenance should retain enough project/function/source information to
+  diagnose conflicting definitions.
+- Initial reserved label values include:
+  - `-1`: unassigned, absent, or default label
+  - `-1000`: unbounded geometry
+  - `-1001`: layout geometry
+- Other negative values remain reserved. Kernel-private positional label values
+  are not global registry labels unless a kernel boundary explicitly requires
+  them.
+
 ### Geometry And Numeric Constraints
 
-- The implementation must be careful with CGAL exact number types.
-- CGAL exact number types are useful, but they are very expensive in memory and
-  CPU cost.
-- The system should avoid unnecessary use, copying, or propagation of exact
-  numeric representations.
-- Numeric strategy should be designed with explicit awareness of precision
-  versus performance tradeoffs.
-- CGAL-specific runtime implementation is deferred until concrete geometry
-  payload types exist; until then, CGAL work should remain strategy and
-  requirement documentation.
-- Execution payloads, traces, cache identities, and invalidation records should
-  not copy future heavy geometry payloads merely for bookkeeping.
-- Future cache storage for concrete geometry should prefer immutable handles,
-  shared blobs, or other ownership-aware storage over repeated value copies.
-- Future threaded geometry work should return compact metadata and owned deltas
-  rather than duplicating full geometry payloads between workers.
+- Phoenix runtime geometry is a canonical immutable 3D representation.
+- Runtime coordinates initially use `double`.
+- Geometry that was formerly represented in two dimensions is embedded on the
+  `y = 0` plane by mapping coordinates to `(x, 0, z)`.
+- Version one runtime topology must represent vertices, directed halfedges and
+  opposites, faces, orientation, disconnected components, and non-manifold
+  relationships.
+- Holes in faces are deferred and must produce structured failure when they
+  cannot be represented safely.
+- Faces and directed halfedges carry `LabelId` values.
+- Opposite halfedges may carry different labels.
+- Runtime geometry values are immutable after instruction publication.
+- Memory/backing-store ownership, actor accumulation ownership, prototype
+  sharing, and subgeometry/selection references are distinct concepts.
+- Vertex, edge/halfedge, and face ids are globally unique over one run.
+- New element ids are assigned during deterministic canonical publication, not
+  in worker-completion order.
+- Workers may return invalid/unassigned ids for newly created elements.
+- Unchanged elements should retain ids through conversion when identity is
+  proven; split, merged, and newly created elements receive new ids.
+- Persistent element references must remain valid through selection, function
+  calls, cache replay, conversion, and face-consumption publication.
+- Geometry fingerprints include coordinates, topology, orientation, element
+  identity as required by semantics, face labels, and directed-halfedge labels.
+- Exact or otherwise kernel-specific CGAL working geometry exists only inside
+  an instruction worker or equivalent isolated kernel invocation.
+- Runtime geometry is promoted to the working representation required by a
+  kernel and demoted back to canonical runtime geometry afterward.
+- Working geometry and CGAL handles must not escape the worker boundary.
+- Runtime geometry, rather than temporary working geometry, is the canonical
+  serialized and cached representation.
+- The runtime representation supports non-manifold topology, but each kernel
+  declares the topology it accepts. A mismatch is an item-scoped failure that
+  may route through `else`.
+- Conversion performs mandatory validation for non-finite coordinates, broken
+  element references, invalid orientation representation, and unrepresentable
+  topology.
+- Geometry-producing instructions run a versioned repair stage after producing
+  runtime geometry.
+- Initial repair may merge near vertices using a configurable absolute
+  tolerance and remove zero-length edges and zero-area faces.
+- The initial numeric tolerance is derived from production extrusion fixtures.
+- Labeled degenerate topology may be removed with diagnostics rather than
+  failing solely because it carried labels.
+- Conversion and repair policy versions participate in cache identity.
+- Exact number types must be used only where the selected kernel requires them;
+  they must not be propagated throughout graph execution merely because a
+  kernel uses them internally.
+- Execution payloads, traces, cache identities, and invalidation records must
+  not copy heavy geometry merely for bookkeeping.
+- Cache storage should prefer immutable shared payloads or ownership-aware
+  blobs over repeated deep copies.
+- Threaded geometry work should return owned results and compact publication
+  metadata rather than duplicating full payloads unnecessarily.
 
 ### Missing / Empty / Default
 
@@ -180,6 +253,10 @@ can be made with the full context available.
 - In `one seed each`, per-item randomness must also be reproducible.
 - Instruction implementations should receive seed values from the runtime
   rather than deriving ad hoc random seeds internally.
+- The initial production-kernel port does not need to reproduce the legacy
+  solver's exact random sequence for the same numeric seed.
+- Initial production-comparison fixtures should avoid randomized operations.
+- Legacy RNG sequence compatibility may be investigated after the initial port.
 
 ### Multiplexing
 
@@ -187,6 +264,39 @@ can be made with the full context available.
 - `input` can multiplex work per input item.
 - Multiplexing may run once per item or once for the whole input depending on
   instruction behavior.
+- Major geometry kernels such as extrusion, partition, and inset multiplex once
+  per input face unless their accepted kernel contract explicitly says
+  otherwise.
+
+### Geometry Publication And Face Consumption
+
+- Some instruction types consume input faces by replacing them with generated
+  geometry for final actor/scene assembly.
+- Consuming versus non-consuming behavior is static instruction-type metadata.
+- Non-consuming instructions such as selection may return stable references to
+  original faces without removing them from final geometry.
+- Input geometry remains immutable. Consumption is explicit instruction-result
+  metadata rather than in-place deletion.
+- A multiplexed consuming instruction decides consumption per input item.
+- A successfully processed item is consumed.
+- A failed, skipped, or `else`-routed item is not consumed.
+- A successful consuming item remains consumed even if a defective
+  implementation unexpectedly emits no replacement; that condition should
+  produce a diagnostic.
+- Multiple branches may consume the same source face. The original is removed
+  once and every successfully produced replacement remains.
+- Other graph branches may continue reading the immutable original value even
+  after a consuming result is computed.
+- Consumption follows the source geometry's actor owner across nested function
+  and actor execution boundaries.
+- Generated geometry, assigned element ids, failures, and consumption effects
+  commit through canonical publication order rather than worker completion
+  order.
+- Actor assembly must retain a publication ledger of geometry contributions and
+  consumption effects by execution/rerun scope.
+- Final actor geometry is derived from immutable contributions after applying
+  successful consumption records, preventing overlap between originals and
+  their replacements.
 
 ### Actors And Hierarchy
 
@@ -233,8 +343,8 @@ can be made with the full context available.
   context naturally.
 - Combining geometry from different actor owners is invalid unless a later
   explicit ownership-changing operation defines otherwise.
-- The concrete actor-local geometry payload representation is deferred until
-  the geometry model is settled.
+- Actor-local geometry uses the canonical immutable runtime representation and
+  is assembled from published contributions and consumption effects.
 - Actor hierarchy is purely structural in version one.
 - Actors may or may not have names.
 - Every actor has an id.
@@ -265,6 +375,14 @@ can be made with the full context available.
 - External process execution is postponed, but should remain architecturally
   possible.
 - General POCO/object payloads are deferred.
+- Materials remain deferred during the initial geometry-kernel port.
+- Required initial build targets are:
+  - Windows x64 with a currently supported MSVC toolchain
+  - Linux x64 with GCC
+  - macOS Apple Silicon with AppleClang
+- Linux Clang and Intel macOS are initially best effort rather than release
+  blockers.
+- C++17 and vcpkg-managed CGAL form the initial porting baseline.
 
 ### Partial Runs And Incremental Update
 
@@ -370,12 +488,28 @@ can be made with the full context available.
 - Caching is required for partial runs in version one.
 - Cache identity must include function/call identity, graph/body identity,
   input identity, and seed identity before cached work can be reused.
+- Concrete geometry cache identity must also include the label-registry
+  fingerprint, kernel/adapter version, and conversion/repair-policy version.
 - Cache input identity must include geometry actor ownership so the same
   geometry label owned by different actors does not collide.
 - The cache must support invalidating dirty deterministic identities without
   inspecting or copying heavy geometry payloads.
 - Cache storage must account for heavy geometry payloads and should not assume
   cheap deep copies in the production implementation.
+- Cached consuming instruction results must store generated canonical runtime
+  geometry and consumed source-face identities.
+- Cache replay must reproduce geometry contribution and consumption effects,
+  not only output-port values.
+- Temporary kernel working geometry is not cached in the initial port.
+- Full cache invalidation is acceptable initially for graph, label, kernel,
+  adapter, or conversion-policy changes.
+- Parameter, input, and seed changes must still invalidate dependent identities
+  so parameter-driven partial reruns remain supported.
+- Before applying a partial rerun result, remove the prior rerun scope's
+  geometry contributions and consumption effects, then apply the new result.
+- If a new result no longer consumes a previously consumed face, actor assembly
+  must be able to restore that original face from unaffected immutable input
+  contributions.
 
 ## Open Requirement Follow-Ups
 
