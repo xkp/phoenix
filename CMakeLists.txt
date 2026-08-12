@@ -123,6 +123,103 @@ else()
     target_compile_options(phoenix_publication_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(phoenix_extrusion_plan_builder_tests
+    src/extrusion/plan_builder.cpp
+    tests/extrusion_plan_builder_tests.cpp
+)
+
+target_include_directories(phoenix_extrusion_plan_builder_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(phoenix_extrusion_plan_builder_tests PRIVATE CGAL::CGAL)
+
+if(MSVC)
+    target_compile_options(phoenix_extrusion_plan_builder_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_extrusion_plan_builder_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_extrusion_profile_tests
+    src/extrusion/profile.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    tests/extrusion_profile_tests.cpp
+)
+
+target_include_directories(phoenix_extrusion_profile_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(phoenix_extrusion_profile_tests PRIVATE CGAL::CGAL)
+
+if(MSVC)
+    target_compile_options(phoenix_extrusion_profile_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_extrusion_profile_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_extrusion_output_builder_tests
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/working_geometry.cpp
+    src/working_geometry_builder.cpp
+    tests/extrusion_output_builder_tests.cpp
+)
+
+target_include_directories(phoenix_extrusion_output_builder_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(phoenix_extrusion_output_builder_tests PRIVATE CGAL::CGAL)
+
+if(MSVC)
+    target_compile_options(phoenix_extrusion_output_builder_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_extrusion_output_builder_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_extrusion_kernel_compile_tests
+    src/extrusion/kernel_port.cpp
+    src/extrusion/plan_builder.cpp
+    src/extrusion/profile.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/working_geometry.cpp
+    src/working_geometry_builder.cpp
+    tests/extrusion_kernel_compile_tests.cpp
+)
+
+target_include_directories(phoenix_extrusion_kernel_compile_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(phoenix_extrusion_kernel_compile_tests PRIVATE CGAL::CGAL)
+
+if(MSVC)
+    target_compile_options(phoenix_extrusion_kernel_compile_tests PRIVATE /W4 /permissive- /bigobj)
+else()
+    target_compile_options(phoenix_extrusion_kernel_compile_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_extrusion_instruction_tests
+    src/cache.cpp
+    src/execution.cpp
+    src/extrusion/instruction.cpp
+    src/extrusion/kernel_port.cpp
+    src/extrusion/plan_builder.cpp
+    src/extrusion/profile.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/publication.cpp
+    src/randomness.cpp
+    src/values.cpp
+    src/working_geometry.cpp
+    src/working_geometry_builder.cpp
+    tests/extrusion_instruction_tests.cpp
+)
+
+target_include_directories(phoenix_extrusion_instruction_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(phoenix_extrusion_instruction_tests PRIVATE CGAL::CGAL)
+
+if(MSVC)
+    target_compile_options(phoenix_extrusion_instruction_tests PRIVATE /W4 /permissive- /bigobj)
+else()
+    target_compile_options(phoenix_extrusion_instruction_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 target_include_directories(phoenix_value_tests
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include

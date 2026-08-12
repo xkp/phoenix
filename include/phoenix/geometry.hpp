@@ -3,6 +3,7 @@
 #include "phoenix/labels.hpp"
 
 #include <cstddef>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -116,6 +117,8 @@ public:
         const std::string& serialized,
         GeometryValidationResult* validation = nullptr);
     [[nodiscard]] std::uint64_t fingerprint() const noexcept;
+    [[nodiscard]] std::shared_ptr<const CanonicalGeometry> copy_face(
+        GeometryIndex face_index) const;
 
 private:
     CanonicalGeometry(
@@ -149,12 +152,19 @@ struct GeometrySelection {
 class RunElementIdAllocator {
 public:
     explicit RunElementIdAllocator(std::uint64_t first = 0) noexcept : next_(first) {}
-    [[nodiscard]] VertexId next_vertex() noexcept { return VertexId{next_++}; }
-    [[nodiscard]] HalfedgeId next_halfedge() noexcept { return HalfedgeId{next_++}; }
-    [[nodiscard]] EdgeId next_edge() noexcept { return EdgeId{next_++}; }
-    [[nodiscard]] FaceId next_face() noexcept { return FaceId{next_++}; }
+    [[nodiscard]] VertexId next_vertex() noexcept { return VertexId{next_.fetch_add(1)}; }
+    [[nodiscard]] HalfedgeId next_halfedge() noexcept { return HalfedgeId{next_.fetch_add(1)}; }
+    [[nodiscard]] EdgeId next_edge() noexcept { return EdgeId{next_.fetch_add(1)}; }
+    [[nodiscard]] FaceId next_face() noexcept { return FaceId{next_.fetch_add(1)}; }
+    void advance_past(std::uint64_t used) noexcept
+    {
+        auto desired = used == UINT64_MAX ? UINT64_MAX : used + 1;
+        auto current = next_.load();
+        while (current < desired && !next_.compare_exchange_weak(current, desired)) {}
+    }
+    [[nodiscard]] std::uint64_t next_value() const noexcept { return next_.load(); }
 private:
-    std::uint64_t next_;
+    std::atomic<std::uint64_t> next_;
 };
 
 [[nodiscard]] std::string to_string(GeometryValidationCode code);

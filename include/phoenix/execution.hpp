@@ -98,6 +98,8 @@ struct InstructionExecutionFrame {
     SeedDerivationInput seed_derivation;
     std::optional<SeedValue> effective_seed;
     MultiplexSeedMode multiplex_seed_mode = MultiplexSeedMode::one_seed_for_all;
+    RunElementIdAllocator* element_ids = nullptr;
+    std::size_t worker_count = 1;
 
     [[nodiscard]] SeedValue derive_item_seed(std::uint64_t item_key) const noexcept;
 };
@@ -237,6 +239,7 @@ struct FunctionExecutionRequest {
     CacheWriter* cache_writer = nullptr;
     std::optional<std::size_t> parent_scope_index;
     GeometryPublicationLedger* publication_ledger = nullptr;
+    RunElementIdAllocator* element_ids = nullptr;
 };
 
 struct FunctionExecutionResult {

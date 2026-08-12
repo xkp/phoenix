@@ -197,6 +197,12 @@ Phoenix-controlled, per-item deterministic streams.
 - `EXTRUDE_MAX_EDGE_LEN2` silently encodes a 5000-unit antenna threshold. Keep
   it unchanged for initial comparisons and investigate it only after golden
   coverage.
+- A substantially different collision-detection system predates the active
+  `brute_force_collisions` implementation. Preserve brute force for the initial
+  port, then recover and evaluate the earlier system as a separately versioned
+  post-port experiment. The still-active exact arrangement plan builder serves
+  topology reconstruction after collision/profile events and should not be
+  mistaken for the obsolete collision search.
 
 Outside debug facilities, `extrude::run` appears invocation-local in this
 audit. Thread safety is not accepted until a Phoenix stress test runs separate

@@ -60,8 +60,13 @@ struct WorkingGeometry {
     WorkingSurfaceMesh::Property_map<WorkingSurfaceMesh::Halfedge_index, GeometryIndex> source_halfedges;
     WorkingSurfaceMesh::Property_map<WorkingSurfaceMesh::Face_index, std::uint64_t> face_ids;
     WorkingSurfaceMesh::Property_map<WorkingSurfaceMesh::Face_index, std::int32_t> face_labels;
+    WorkingSurfaceMesh::Property_map<WorkingSurfaceMesh::Face_index, std::int32_t> face_tags;
     WorkingSurfaceMesh::Property_map<WorkingSurfaceMesh::Face_index, GeometryIndex> source_faces;
 };
+
+// Creates an empty mesh with the complete Phoenix property schema installed.
+// Kernel-local builders use this instead of duplicating property-map names and defaults.
+[[nodiscard]] WorkingGeometry create_working_geometry();
 
 struct PromotionResult {
     bool success = false;

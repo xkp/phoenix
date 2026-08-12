@@ -17,7 +17,7 @@ void diagnostic(std::vector<AdapterDiagnostic>& diagnostics, AdapterDiagnosticCo
     diagnostics.push_back(AdapterDiagnostic{code, std::move(message), source});
 }
 
-WorkingGeometry make_working_geometry()
+WorkingGeometry make_working_geometry_impl()
 {
     WorkingGeometry working;
     working.vertex_ids = working.mesh.add_property_map<WorkingSurfaceMesh::Vertex_index, std::uint64_t>(
@@ -36,6 +36,8 @@ WorkingGeometry make_working_geometry()
         "f:phoenix_id", UINT64_MAX).first;
     working.face_labels = working.mesh.add_property_map<WorkingSurfaceMesh::Face_index, std::int32_t>(
         "f:label", -1).first;
+    working.face_tags = working.mesh.add_property_map<WorkingSurfaceMesh::Face_index, std::int32_t>(
+        "f:tag", 0).first;
     working.source_faces = working.mesh.add_property_map<WorkingSurfaceMesh::Face_index, GeometryIndex>(
         "f:source_index", invalid_geometry_index).first;
     return working;
@@ -66,10 +68,15 @@ double polygon_area_vector_squared(
 
 } // namespace
 
+WorkingGeometry create_working_geometry()
+{
+    return make_working_geometry_impl();
+}
+
 PromotionResult SurfaceMeshAdapter::promote(const CanonicalGeometry& source) const
 {
     PromotionResult result;
-    result.working = make_working_geometry();
+    result.working = create_working_geometry();
     const auto validation = source.validate();
     if (!validation.ok()) {
         for (const auto& issue : validation.issues) {

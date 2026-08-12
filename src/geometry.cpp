@@ -240,6 +240,40 @@ std::uint64_t CanonicalGeometry::fingerprint() const noexcept
     return hash;
 }
 
+std::shared_ptr<const CanonicalGeometry> CanonicalGeometry::copy_face(
+    GeometryIndex face_index) const
+{
+    if (face_index >= faces_.size()) return nullptr;
+    std::vector<RuntimeVertex> vertices;
+    std::vector<RuntimeHalfedge> halfedges;
+    std::vector<GeometryIndex> source_loop;
+    auto current = faces_[face_index].halfedge;
+    do {
+        source_loop.push_back(current);
+        current = halfedges_[current].next;
+    } while (current != faces_[face_index].halfedge);
+    vertices.reserve(source_loop.size());
+    halfedges.reserve(source_loop.size());
+    for (GeometryIndex i = 0; i < source_loop.size(); ++i) {
+        const auto& source_halfedge = halfedges_[source_loop[i]];
+        auto vertex = vertices_[source_halfedge.origin_vertex];
+        vertex.outgoing_halfedge = i;
+        vertices.push_back(vertex);
+        auto halfedge = source_halfedge;
+        halfedge.origin_vertex = i;
+        halfedge.face = 0;
+        halfedge.next = (i + 1) % static_cast<GeometryIndex>(source_loop.size());
+        halfedge.previous = (i + static_cast<GeometryIndex>(source_loop.size()) - 1)
+            % static_cast<GeometryIndex>(source_loop.size());
+        halfedge.opposite = invalid_geometry_index;
+        halfedge.radial_next = invalid_geometry_index;
+        halfedges.push_back(halfedge);
+    }
+    auto face = faces_[face_index];
+    face.halfedge = 0;
+    return create(std::move(vertices), std::move(halfedges), {face});
+}
+
 std::string to_string(GeometryValidationCode code)
 {
     switch (code) {

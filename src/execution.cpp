@@ -1039,6 +1039,8 @@ InstructionExecutionFrame make_execution_frame(
     frame.seed_derivation = seed_input;
     frame.effective_seed = seed_deriver.derive(seed_input);
     frame.multiplex_seed_mode = instruction.multiplex_seed_mode;
+    frame.element_ids = request.element_ids;
+    frame.worker_count = request.options.worker_count;
     return frame;
 }
 
@@ -1595,6 +1597,7 @@ MultiplexItemResult execute_child_invocation_item(
     child_request.cache_writer = input.request->cache_writer;
     child_request.parent_scope_index = input.current_scope_index;
     child_request.publication_ledger = input.publication_ledger;
+    child_request.element_ids = input.request->element_ids;
 
     const auto child_result = input.executor->run(child_request);
     if (child_result.status == FunctionExecutionStatus::completed
@@ -1905,8 +1908,33 @@ FunctionExecutor::FunctionExecutor(
 {
 }
 
-FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& request) const
+FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& request_) const
 {
+    RunElementIdAllocator local_element_ids;
+    FunctionExecutionRequest request_storage = request_;
+    if (request_storage.element_ids == nullptr) {
+        auto reserve_geometry_ids = [&](const CanonicalGeometryRef& geometry) {
+            if (!geometry) return;
+            for (const auto& vertex : geometry->vertices())
+                if (vertex.id.valid()) local_element_ids.advance_past(vertex.id.value());
+            for (const auto& halfedge : geometry->halfedges()) {
+                if (halfedge.id.valid()) local_element_ids.advance_past(halfedge.id.value());
+                if (halfedge.edge_id.valid()) local_element_ids.advance_past(halfedge.edge_id.value());
+            }
+            for (const auto& face : geometry->faces())
+                if (face.id.valid()) local_element_ids.advance_past(face.id.value());
+        };
+        for (const auto& input : request_storage.inputs) {
+            if (const auto* geometry = input.value.as_geometry()) {
+                reserve_geometry_ids(geometry->geometry);
+            } else if (const auto* collection = input.value.as_geometry_collection()) {
+                for (const auto& contribution : collection->contributions)
+                    reserve_geometry_ids(contribution.geometry);
+            }
+        }
+        request_storage.element_ids = &local_element_ids;
+    }
+    const auto& request = request_storage;
     FunctionExecutionResult execution_result;
 
     if (request.function == nullptr) {

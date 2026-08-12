@@ -485,6 +485,24 @@ Exit gate:
 
 ## Phase P6: Port Extrusion End To End
 
+Status: implementation complete; compatibility signoff is provisional. The
+audited kernel candidates are preserved byte-for-byte
+under `src/legacy/extrusion` with verified source hashes and are quarantined
+from the build. See `PORTING_EXTRUSION_P6_LOG.md` for the explicit compatibility
+boundary and adaptation sequence.
+
+Current checkpoint: the full preserved geometry body compiles under CGAL 6.2
+behind the immutable kernel boundary and is connected to execution, repair,
+failure routing, consumption, and canonical publication. Fixtures cover a
+direct labeled triangle, multi-face multiplexing, item-scoped failure and
+`else`, two consuming branches, brute-force collision, horizontal profile
+transitions, actual skirt insertion, and deterministic results across repeated
+runs and requested worker counts. The checked-in production fixture matches
+Phoenix's semantic topology (24 unique vertices, 19 faces, and 40 export
+triangles) and cap/side classification. Final compatibility signoff still
+requires a runnable production backend to regenerate the oracle and compare
+coordinates and labels, not just its captured semantic topology.
+
 Goal:
 
 - run the preserved production extrusion algorithm as a Phoenix instruction and
@@ -790,5 +808,6 @@ Each kernel receives a short port record containing:
 
 ## Immediate Next Step
 
-Begin Phase P6 using the audited profile-extrusion boundary, direct extrusion
-working input, immutable labels, and consumption-aware publication ledger.
+Begin Phase P7 cache and partial-rerun integration. Keep P6 compatibility
+signoff provisional until the production backend can regenerate the captured
+oracle for full coordinate and label comparison.
