@@ -240,6 +240,14 @@ std::uint64_t CanonicalGeometry::fingerprint() const noexcept
     return hash;
 }
 
+std::size_t CanonicalGeometry::storage_bytes() const noexcept
+{
+    return sizeof(CanonicalGeometry)
+        + vertices_.capacity() * sizeof(RuntimeVertex)
+        + halfedges_.capacity() * sizeof(RuntimeHalfedge)
+        + faces_.capacity() * sizeof(RuntimeFace);
+}
+
 std::shared_ptr<const CanonicalGeometry> CanonicalGeometry::copy_face(
     GeometryIndex face_index) const
 {

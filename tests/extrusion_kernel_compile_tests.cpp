@@ -2,6 +2,7 @@
 #include "phoenix/extrusion/output_builder.hpp"
 
 #include <cstdlib>
+#include <future>
 #include <iostream>
 
 int main()
@@ -258,6 +259,20 @@ int main()
         && oracle.working.mesh.number_of_faces() == 19
         && oracle_triangles == 40 && oracle_sides == 18 && oracle_caps == 1;
 
+    constexpr std::size_t concurrent_count = 16;
+    std::vector<std::future<bool>> concurrent;
+    concurrent.reserve(concurrent_count);
+    for (std::size_t i = 0; i < concurrent_count; ++i) {
+        concurrent.push_back(std::async(std::launch::async, [input, i]() {
+            phoenix::RunElementIdAllocator allocator{10000 + i * 1000};
+            const auto result = phoenix::extrusion::run_kernel(input, allocator);
+            if (!result.success) return false;
+            return phoenix::SurfaceMeshAdapter{}.demote(result.working).success();
+        }));
+    }
+    bool concurrent_ok = true;
+    for (auto& future : concurrent) concurrent_ok = future.get() && concurrent_ok;
+
     std::cout << "invalid boundary: " << invalid_ok << '\n'
               << "profile sign validation: " << sign_ok << '\n'
               << "direct triangle extrusion: " << direct_ok
@@ -288,8 +303,10 @@ int main()
               << "captured production oracle topology: " << oracle_ok
               << " (vertices=" << oracle.working.mesh.number_of_vertices()
               << ", faces=" << oracle.working.mesh.number_of_faces()
-              << ", export triangles=" << oracle_triangles << ")\n";
+              << ", export triangles=" << oracle_triangles << ")\n"
+              << "concurrent kernel isolation: " << concurrent_ok
+              << " (invocations=" << concurrent_count << ")\n";
     return invalid_ok && sign_ok && direct_ok && collision_ok && skirt_ok
-        && explicit_skirt_ok && oracle_ok
+        && explicit_skirt_ok && oracle_ok && concurrent_ok
         ? EXIT_SUCCESS : EXIT_FAILURE;
 }

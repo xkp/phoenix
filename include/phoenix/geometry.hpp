@@ -117,6 +117,7 @@ public:
         const std::string& serialized,
         GeometryValidationResult* validation = nullptr);
     [[nodiscard]] std::uint64_t fingerprint() const noexcept;
+    [[nodiscard]] std::size_t storage_bytes() const noexcept;
     [[nodiscard]] std::shared_ptr<const CanonicalGeometry> copy_face(
         GeometryIndex face_index) const;
 

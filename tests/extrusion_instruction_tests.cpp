@@ -7,6 +7,17 @@
 
 namespace {
 
+class MetricsSink final : public phoenix::extrusion::StageMetricsSink {
+public:
+    void record_extrusion_stages(phoenix::extrusion::StageMetrics value) override
+    {
+        metrics = value;
+        recorded = true;
+    }
+    phoenix::extrusion::StageMetrics metrics;
+    bool recorded = false;
+};
+
 phoenix::CanonicalGeometryRef source_triangle()
 {
     std::vector<phoenix::RuntimeVertex> vertices{
@@ -184,6 +195,8 @@ bool test_executor_consumes_and_publishes_replacement()
     config.left_label = phoenix::LabelId{83};
     config.skirt_label = phoenix::LabelId{84};
     config.cap_label = phoenix::LabelId{85};
+    MetricsSink metrics;
+    config.metrics_sink = &metrics;
 
     phoenix::InstructionRegistry registry;
     registry.register_handler("extrusion", phoenix::extrusion::make_instruction_handler(config));
@@ -206,7 +219,9 @@ bool test_executor_consumes_and_publishes_replacement()
         if (face.id == phoenix::FaceId{130}) return false;
     for (const auto& vertex : final->vertices())
         if (vertex.id.valid() && vertex.id.value() > 102 && vertex.id.value() <= 130) return false;
-    return true;
+    return metrics.recorded && metrics.metrics.item_count == 1
+        && metrics.metrics.succeeded_item_count == 1
+        && final->storage_bytes() >= sizeof(phoenix::CanonicalGeometry);
 }
 
 bool test_multiple_faces_are_independent_items()

@@ -75,6 +75,34 @@ else()
     target_compile_options(phoenix_label_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+set(PHOENIX_PRODUCTION_SOLVER_ROOT
+    "C:/Users/emili/source/repos/threedee.io/threedee.solver"
+    CACHE PATH "Read-only production solver checkout used by the partition compatibility probe")
+if(EXISTS "${PHOENIX_PRODUCTION_SOLVER_ROOT}/backend/partition/partition_solver.cpp")
+    add_library(phoenix_partition_production_probe OBJECT EXCLUDE_FROM_ALL
+        src/partition/ported/production/partition_solver.cpp
+        src/partition/ported/production/partition_solver_constraints.cpp
+        src/partition/ported/production/partition_tesselator.cpp
+        src/partition/ported/production/partition_errors.cpp
+    )
+    target_include_directories(phoenix_partition_production_probe PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production"
+        "${PHOENIX_PRODUCTION_SOLVER_ROOT}"
+        "${PHOENIX_PRODUCTION_SOLVER_ROOT}/backend"
+        "${PHOENIX_PRODUCTION_SOLVER_ROOT}/backend/partition"
+    )
+    target_link_libraries(phoenix_partition_production_probe PRIVATE CGAL::CGAL)
+    if(MSVC)
+        target_compile_options(phoenix_partition_production_probe PRIVATE
+            /W4 /permissive /Zc:strictStrings- /Zc:twoPhase- /bigobj
+            "/FI${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production_probe_compat.hpp")
+    else()
+        target_compile_options(phoenix_partition_production_probe PRIVATE
+            -Wall -Wextra -Wpedantic)
+    endif()
+endif()
+
 add_executable(phoenix_geometry_tests
     src/geometry.cpp
     src/labels.cpp
@@ -223,6 +251,62 @@ if(MSVC)
     target_compile_options(phoenix_extrusion_instruction_tests PRIVATE /W4 /permissive- /bigobj)
 else()
     target_compile_options(phoenix_extrusion_instruction_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_partition_working_face_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/randomness.cpp
+    src/partition/working_face.cpp
+    src/partition/working_arrangement.cpp
+    src/partition/arrangement_segment_repository.cpp
+    src/partition/sampling.cpp
+    src/partition/trusted_solver_foundation.cpp
+    src/partition/ported_partition_solver_foundation.cpp
+    src/partition/trusted_branching.cpp
+    src/partition/adapted_constraints.cpp
+    src/partition/plan_executor.cpp
+    src/partition/straight_cut_tessellator.cpp
+    src/partition/repeat_distribution.cpp
+    tests/partition_working_face_tests.cpp
+)
+target_include_directories(phoenix_partition_working_face_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(phoenix_partition_working_face_tests PRIVATE CGAL::CGAL)
+if(MSVC)
+    target_compile_options(phoenix_partition_working_face_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_partition_working_face_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_partition_plan_tests
+    src/partition/repeat_distribution.cpp
+    tests/partition_plan_tests.cpp
+)
+target_include_directories(phoenix_partition_plan_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+if(MSVC)
+    target_compile_options(phoenix_partition_plan_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_partition_plan_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_partition_solver_view_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/randomness.cpp
+    src/partition/working_face.cpp
+    src/partition/solver_view.cpp
+    src/partition/angle_ranges.cpp
+    src/partition/constraints.cpp
+    src/partition/unconstrained_solver.cpp
+    src/partition/sampling.cpp
+    tests/partition_solver_view_tests.cpp
+)
+target_include_directories(phoenix_partition_solver_view_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(phoenix_partition_solver_view_tests PRIVATE CGAL::CGAL)
+if(MSVC)
+    target_compile_options(phoenix_partition_solver_view_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_partition_solver_view_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 target_include_directories(phoenix_value_tests

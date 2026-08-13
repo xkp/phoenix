@@ -1,0 +1,62 @@
+name: Extrusion platforms
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "vcpkg.json"
+      - "include/phoenix/**"
+      - "src/**"
+      - "tests/**"
+      - ".github/workflows/extrusion-platforms.yml"
+  pull_request:
+
+jobs:
+  gcc:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        preset: [linux-debug, linux-release]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/run-vcpkg@v11
+      - uses: lukka/run-cmake@v10
+        with:
+          configurePreset: ${{ matrix.preset }}
+          buildPreset: build-${{ matrix.preset }}
+      - shell: bash
+        run: for test in build/${{ matrix.preset }}/phoenix_*_tests; do "$test"; done
+
+  apple-silicon:
+    runs-on: macos-14
+    strategy:
+      matrix:
+        preset: [macos-apple-silicon-debug, macos-apple-silicon-release]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/run-vcpkg@v11
+      - uses: lukka/run-cmake@v10
+        with:
+          configurePreset: ${{ matrix.preset }}
+          buildPreset: build-${{ matrix.preset }}
+      - shell: bash
+        run: for test in build/${{ matrix.preset }}/phoenix_*_tests; do "$test"; done
+
+  clang-tsan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/run-vcpkg@v11
+      - name: Configure ThreadSanitizer
+        shell: bash
+        run: >-
+          cmake -S . -B build/linux-clang-tsan -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+      - run: cmake --build build/linux-clang-tsan --target phoenix_extrusion_kernel_compile_tests
+      - run: build/linux-clang-tsan/phoenix_extrusion_kernel_compile_tests

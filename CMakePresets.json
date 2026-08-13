@@ -30,6 +30,22 @@
       }
     },
     {
+      "name": "windows-debug",
+      "inherits": "windows-default",
+      "binaryDir": "${sourceDir}/build/windows-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "windows-release",
+      "inherits": "windows-default",
+      "binaryDir": "${sourceDir}/build/windows-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/windows-default/vcpkg_installed",
+        "VCPKG_MANIFEST_MODE": "OFF"
+      }
+    },
+    {
       "name": "linux-default",
       "inherits": "base",
       "cacheVariables": {
@@ -40,28 +56,102 @@
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
       }
+    },
+    {
+      "name": "linux-debug",
+      "inherits": "linux-default",
+      "binaryDir": "${sourceDir}/build/linux-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "linux-release",
+      "inherits": "linux-default",
+      "binaryDir": "${sourceDir}/build/linux-release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "macos-apple-silicon",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_OSX_ARCHITECTURES": "arm64"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "macos-apple-silicon-debug",
+      "inherits": "macos-apple-silicon",
+      "binaryDir": "${sourceDir}/build/macos-apple-silicon-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "macos-apple-silicon-release",
+      "inherits": "macos-apple-silicon",
+      "binaryDir": "${sourceDir}/build/macos-apple-silicon-release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "macos-intel",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_OSX_ARCHITECTURES": "x86_64"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "macos-intel-debug",
+      "inherits": "macos-intel",
+      "binaryDir": "${sourceDir}/build/macos-intel-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "macos-intel-release",
+      "inherits": "macos-intel",
+      "binaryDir": "${sourceDir}/build/macos-intel-release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     }
   ],
   "buildPresets": [
     {
       "name": "build-windows-debug",
-      "configurePreset": "windows-default",
-      "configuration": "Debug"
+      "configurePreset": "windows-debug"
     },
     {
       "name": "build-windows-release",
-      "configurePreset": "windows-default",
-      "configuration": "Release"
+      "configurePreset": "windows-release"
     },
     {
       "name": "build-linux-debug",
-      "configurePreset": "linux-default",
-      "configuration": "Debug"
+      "configurePreset": "linux-debug"
     },
     {
       "name": "build-linux-release",
-      "configurePreset": "linux-default",
-      "configuration": "Release"
+      "configurePreset": "linux-release"
+    },
+    {
+      "name": "build-macos-apple-silicon-debug",
+      "configurePreset": "macos-apple-silicon-debug"
+    },
+    {
+      "name": "build-macos-apple-silicon-release",
+      "configurePreset": "macos-apple-silicon-release"
+    },
+    {
+      "name": "build-macos-intel-debug",
+      "configurePreset": "macos-intel-debug"
+    },
+    {
+      "name": "build-macos-intel-release",
+      "configurePreset": "macos-intel-release"
     }
   ]
 }

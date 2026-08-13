@@ -154,6 +154,16 @@ bool test_immutable_sharing_selection_and_run_ids()
         && edge.value() != face.value() && mapped.x == 2.0 && mapped.y == 0.0 && mapped.z == 3.0;
 }
 
+bool test_runtime_storage_estimate_covers_payload()
+{
+    const auto geometry = make_triangle();
+    const auto minimum = sizeof(phoenix::CanonicalGeometry)
+        + geometry->vertices().size() * sizeof(phoenix::RuntimeVertex)
+        + geometry->halfedges().size() * sizeof(phoenix::RuntimeHalfedge)
+        + geometry->faces().size() * sizeof(phoenix::RuntimeFace);
+    return geometry->storage_bytes() >= minimum;
+}
+
 } // namespace
 
 int main()
@@ -164,7 +174,8 @@ int main()
         && test_hole_is_rejected()
         && test_non_finite_is_rejected()
         && test_fingerprint_covers_coordinates_orientation_and_labels()
-        && test_immutable_sharing_selection_and_run_ids();
+        && test_immutable_sharing_selection_and_run_ids()
+        && test_runtime_storage_estimate_covers_payload();
     if (!ok) {
         std::cerr << "geometry tests failed\n";
         return EXIT_FAILURE;

@@ -1,5 +1,6 @@
 #include "phoenix/extrusion/instruction.hpp"
 
+#include <chrono>
 #include <utility>
 
 namespace phoenix::extrusion {
@@ -57,14 +58,20 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
         }
 
         const auto owner = geometry_owner(frame, *geometry);
+        StageMetrics metrics;
         std::vector<GeometryValue> outputs;
         for (GeometryIndex face_index = 0;
              face_index < geometry->geometry->faces().size(); ++face_index) {
             const auto source_face = geometry->geometry->copy_face(face_index);
             GeometryItemEffect effect;
             effect.item_key = face_index;
+            ++metrics.item_count;
+            const auto preparation_start = std::chrono::steady_clock::now();
             const auto prepared = ExtrusionInputAdapter{}.prepare_face(
                 *geometry->geometry, face_index);
+            metrics.preparation_microseconds += static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - preparation_start).count());
             if (!prepared.success) {
                 effect.succeeded = false;
                 effect.failure_message = prepared.diagnostics.empty()
@@ -78,22 +85,34 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
                     effect.succeeded = false;
                     effect.failure_message = "Could not construct the extrusion kernel input.";
                 } else {
+                    const auto kernel_start = std::chrono::steady_clock::now();
                     const auto kernel = run_kernel(*input, *frame.element_ids);
+                    metrics.kernel_microseconds += static_cast<std::uint64_t>(
+                        std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::steady_clock::now() - kernel_start).count());
                     if (!kernel.success) {
                         effect.succeeded = false;
                         effect.failure_message = kernel.diagnostics.empty()
                             ? "Extrusion kernel failed."
                             : kernel.diagnostics.front().message;
                     } else {
+                        const auto demotion_start = std::chrono::steady_clock::now();
                         const auto demoted = SurfaceMeshAdapter{}.demote(kernel.working);
+                        metrics.demotion_microseconds += static_cast<std::uint64_t>(
+                            std::chrono::duration_cast<std::chrono::microseconds>(
+                                std::chrono::steady_clock::now() - demotion_start).count());
                         if (!demoted.success()) {
                             effect.succeeded = false;
                             effect.failure_message = demoted.diagnostics.empty()
                                 ? "Could not demote extrusion output."
                                 : demoted.diagnostics.front().message;
                         } else {
+                            const auto repair_start = std::chrono::steady_clock::now();
                             const auto repaired = GeometryRepairer{config.repair_policy}.repair(
                                 *demoted.geometry);
+                            metrics.repair_microseconds += static_cast<std::uint64_t>(
+                                std::chrono::duration_cast<std::chrono::microseconds>(
+                                    std::chrono::steady_clock::now() - repair_start).count());
                             if (!repaired.success()) {
                                 effect.succeeded = false;
                                 effect.failure_message = "Could not repair extrusion output.";
@@ -103,6 +122,7 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
                                     {owner, prepared.face.source_face_id});
                                 outputs.push_back(GeometryValue{
                                     "extrusion", owner, repaired.geometry});
+                                ++metrics.succeeded_item_count;
                             }
                         }
                     }
@@ -117,6 +137,7 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
         }
         result.produced_outputs.push_back({config.geometry_output_port,
             RuntimeValue::geometry_collection(std::move(outputs))});
+        if (config.metrics_sink) config.metrics_sink->record_extrusion_stages(metrics);
         return result;
     };
 }
