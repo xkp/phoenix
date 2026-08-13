@@ -168,6 +168,43 @@ else()
         -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(phoenix_profile_asset_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/working_geometry.cpp
+    src/extrusion/profile.cpp
+    src/profiles/asset.cpp
+    tests/profile_asset_tests.cpp
+)
+target_include_directories(phoenix_profile_asset_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_profile_asset_tests PRIVATE CGAL::CGAL)
+if(MSVC)
+    target_compile_options(phoenix_profile_asset_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_profile_asset_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_select_instruction_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/randomness.cpp
+    src/values.cpp
+    src/select/instruction.cpp
+    tests/select_instruction_tests.cpp
+)
+target_include_directories(phoenix_select_instruction_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_select_instruction_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_select_instruction_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(phoenix_merge_production_adapter_tests
     src/cache.cpp
     src/execution.cpp

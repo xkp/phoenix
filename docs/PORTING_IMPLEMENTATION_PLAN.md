@@ -1041,13 +1041,27 @@ Exit gate:
 
 ## Phase P11: Expand The Kernel And Instruction Inventory
 
-Status: inventory complete. See `PORTING_P11_INVENTORY.md`. Merge is the next
-kernel family. Overlay is explicitly excluded from the port because the
+Status: inventory complete. See `PORTING_P11_INVENTORY.md`. Merge M0-M6 and
+the first-class non-scripted profile asset/resolution layer are complete.
+Overlay is explicitly excluded from the port because the
 production implementation is not production-ready; it is deferred to P13 for
 possible clean reimplementation. Profiles are classified as the most important
 persisted asset after labels and receive an independent immutable identity,
 persistence, migration, and cache contract. Styles and materials are not
 required dependencies because they may be retired.
+
+The profile checkpoint is recorded in `PORTING_PROFILE_SOURCE_MAP.md`.
+Immutable versioned assets, conflict-safe registry ownership, deterministic
+fingerprints, interpolation, repeat expansion, named scalar bindings, Bezier
+tessellation, stable labels, and explicit sign validation now resolve into the
+existing extrusion kernel profile. Production JSON/binary migration remains in
+P12, and evaluation of expressions remains deliberately blocked on the P11
+scripting contract. Non-scripted 3D face select is now implemented and recorded
+in `PORTING_SELECT_SOURCE_MAP.md`. It preserves production label routing,
+edge/opposite/border/length predicates, deterministic count/range/step and
+percentage limits, and `else`, while remaining immutable and non-consuming.
+Directed-edge selection is pending an explicit stable halfedge runtime value;
+it is not approximated as face selection. Rename is the next core slice.
 
 Goal:
 
