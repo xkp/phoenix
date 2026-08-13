@@ -1061,7 +1061,13 @@ in `PORTING_SELECT_SOURCE_MAP.md`. It preserves production label routing,
 edge/opposite/border/length predicates, deterministic count/range/step and
 percentage limits, and `else`, while remaining immutable and non-consuming.
 Directed-edge selection is pending an explicit stable halfedge runtime value;
-it is not approximated as face selection. Rename is the next core slice.
+it is not approximated as face selection. Non-scripted rename is now
+implemented and recorded in `PORTING_RENAME_SOURCE_MAP.md`: manual maps,
+seeded alternatives, face and directed-edge length/opposite/border/edge-count
+conditions, owning-face label inheritance, and global fallbacks create an
+immutable canonical copy while preserving every element ID. Expression and
+binding-dependent relation modes remain gated on scripting. Smooth and
+non-scripted instancing are the next core slices.
 
 Goal:
 

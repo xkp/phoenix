@@ -205,6 +205,23 @@ else()
         -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(phoenix_rename_instruction_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/values.cpp
+    src/rename/instruction.cpp
+    tests/rename_instruction_tests.cpp
+)
+target_include_directories(phoenix_rename_instruction_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_rename_instruction_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_rename_instruction_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(phoenix_merge_production_adapter_tests
     src/cache.cpp
     src/execution.cpp
