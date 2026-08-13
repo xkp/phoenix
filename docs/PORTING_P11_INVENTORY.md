@@ -30,18 +30,34 @@
 | 2 | Profile assets and construction | First-class immutable asset contract plus Phoenix-native value preparation | Define identity/persistence early; extend the existing extrusion profile implementation without importing the VM builder wholesale |
 | 3 | Select | Phoenix-native non-mutating value transformation | Port after merge; return references/copies without consuming sources |
 | 4 | Rename | Phoenix-native immutable label transformation with production condition semantics | Port after select; never mutate shared label definitions or geometry in place |
-| 5 | Smooth/subdivision | Preserved OpenSubdiv and hard-edge kernels behind canonical adapters | Port after label transformations; audit as two distinct modes |
+| 5 | Smooth/subdivision | Preserved OpenSubdiv kernel behind a canonical adapter | Port after label transformations; legacy hard-edge rounding is not production-ready and is deferred |
 | 6 | External instancing | Phoenix runtime transformation and asset adapter | Port 3D face placement, orientation-label behavior, transforms, and optional source consumption |
-| 7 | Scripting/expression runtime | Cross-cutting Phoenix runtime subsystem | Define the behavioral and security contract before enabling script-dependent instruction modes |
-| 8 | Script-dependent instruction modes | Phoenix runtime/control-flow and value transformations | Complete conditional select/rename/profile/instance behavior and control instructions after scripting is stable |
-| 9 | Exporters | Boundary adapter | Implement from canonical geometry after runtime geometry behavior is stable |
+| 7 | Bounded loop and non-scripted control core | Phoenix runtime/control-flow subsystem | Port production loop iteration, feedback, accumulation, index, limits, and deterministic seeds without enabling general graph cycles |
+| 8 | Scripting/expression runtime | Cross-cutting Phoenix runtime subsystem | Define the behavioral and security contract before enabling expression-dependent modes |
+| 9 | Expression-dependent instruction modes | Phoenix runtime/control-flow and value transformations | Complete `if`, `case`, loop variables, conditional select/rename/profile/instance behavior after scripting is stable |
+| 10 | Exporters | Boundary adapter | Implement from canonical geometry after runtime geometry behavior is stable |
 | Deferred | Overlay | Post-port clean implementation candidate | Do not port the current production kernel or loader |
 
 Control-flow instructions (`choice`, `case`, `if`, `loop`, function calls,
 input/output, and LOD) belong to Phoenix runtime/migration work rather than the
-geometry-kernel queue. Their expression-dependent modes are blocked on the
-scripting contract below. The deprecated `share` instruction is excluded from
-both queues.
+geometry-kernel queue. They are not all blocked on scripting. Production `if`
+has a variable-truthiness mode that can follow the typed variable contract;
+production `loop` has a substantial fixed-count/ranged iteration core that must
+be ported before expression evaluation. `case`, expression-mode `if`, and loop
+variable update expressions remain blocked on the scripting contract. The
+deprecated `share` instruction is excluded from both queues.
+
+### Control-flow recovery order
+
+1. Document port routing and truthiness for non-scripted `if`.
+2. Implement bounded loop execution as a special runtime construct, not as a
+   general graph cycle.
+3. Preserve loop feedback through the body `loop` output, accumulation from
+   `all`/`output`, deterministic per-iteration seeds, `$index`, configured
+   maximum/range/step behavior, early termination, and a hard safety budget.
+4. Define and implement the scripting/expression runtime.
+5. Add expression-mode `if`, ordered first-match `case` with `else`, and loop
+   variable initialization/update expressions.
 
 ## Merge Production Boundary
 

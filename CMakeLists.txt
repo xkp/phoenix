@@ -9,6 +9,95 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(CGAL REQUIRED)
 find_package(OpenSubdiv CONFIG REQUIRED)
 
+add_executable(phoenix_loop_runtime_tests
+    src/randomness.cpp
+    src/values.cpp
+    src/loop/runtime.cpp
+    tests/loop_runtime_tests.cpp
+)
+target_include_directories(phoenix_loop_runtime_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_loop_runtime_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_loop_runtime_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_loop_function_body_tests
+    src/cache.cpp
+    src/execution.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/publication.cpp
+    src/randomness.cpp
+    src/values.cpp
+    src/loop/runtime.cpp
+    src/loop/function_body.cpp
+    tests/loop_function_body_tests.cpp
+)
+target_include_directories(phoenix_loop_function_body_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_loop_function_body_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_loop_function_body_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_loop_geometry_transaction_tests
+    src/cache.cpp
+    src/execution.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/publication.cpp
+    src/randomness.cpp
+    src/values.cpp
+    src/loop/runtime.cpp
+    src/loop/function_body.cpp
+    src/loop/geometry_transaction.cpp
+    tests/loop_geometry_transaction_tests.cpp
+)
+target_include_directories(phoenix_loop_geometry_transaction_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_loop_geometry_transaction_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_loop_geometry_transaction_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_loop_instruction_tests
+    src/cache.cpp
+    src/execution.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/invalidation.cpp
+    src/labels.cpp
+    src/partial_run.cpp
+    src/partial_run_apply.cpp
+    src/partial_run_scope.cpp
+    src/publication.cpp
+    src/randomness.cpp
+    src/scene_update.cpp
+    src/values.cpp
+    src/loop/runtime.cpp
+    src/loop/function_body.cpp
+    src/loop/geometry_transaction.cpp
+    src/loop/instruction.cpp
+    tests/loop_instruction_tests.cpp
+)
+target_include_directories(phoenix_loop_instruction_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_loop_instruction_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_loop_instruction_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(phoenix_cgal_app
     src/cache.cpp
     src/execution.cpp

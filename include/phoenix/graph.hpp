@@ -44,6 +44,9 @@ struct InstructionDescriptor {
     std::optional<SeedValue> local_seed;
     std::optional<FunctionId> called_function_id;
     std::vector<LabelUid> referenced_label_uids;
+    // Stable persisted handler/configuration identity. Any behavior-affecting
+    // option captured outside the port graph must be represented here.
+    std::string configuration_revision;
 };
 
 struct FunctionDescriptor {

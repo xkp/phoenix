@@ -376,8 +376,18 @@ can be made with the full context available.
 ### Version One Scope
 
 - Version one is in-process only.
-- Version one does not support feedback loops.
-- A special loop instruction may be defined later.
+- Version one does not support arbitrary graph feedback cycles.
+- Production-compatible bounded iteration is required through a special loop
+  runtime construct. It must not make the general instruction graph cyclic.
+- The loop construct must support a deterministic fixed/ranged iteration count,
+  early termination when the body emits no `loop` value, feedback of that value
+  into the next iteration, accumulation from body `all`/`output`, a stable
+  zero-based `$index`, deterministic per-iteration seeds, and a hard execution
+  budget. Expression-updated loop variables depend on the scripting contract.
+- Every behavior-affecting instruction option captured outside runtime input
+  ports must contribute a stable `configuration_revision` to the instruction's
+  graph/cache identity. Loop count, range, step, safety budgets, and body
+  function identity are required parts of that revision.
 - External process execution is postponed, but should remain architecturally
   possible.
 - General POCO/object payloads are deferred.

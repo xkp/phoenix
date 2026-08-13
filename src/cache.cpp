@@ -378,6 +378,8 @@ std::string CacheIdentityBuilder::graph_revision(const FunctionDescriptor& funct
         append_optional_number(stream, instruction.local_seed);
         append_separator(stream);
         append_optional_string(stream, instruction.called_function_id);
+        append_separator(stream);
+        append_field(stream, instruction.configuration_revision);
 
         auto referenced_labels = instruction.referenced_label_uids;
         std::sort(referenced_labels.begin(), referenced_labels.end());

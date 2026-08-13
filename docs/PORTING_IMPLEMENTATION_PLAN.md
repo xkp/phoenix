@@ -1077,9 +1077,10 @@ IDs, and directed-edge labels remain unassigned exactly where production's
 face-varying propagation is disabled. Transactional instruction publication,
 cache replay, partial-rerun restoration, and the Linux/Apple platform matrix
 are covered. Persisted option migration remains in P12, while production's
-optional preprocessing flags require fixtures before exposure. Hard-edge
-rounding follows against the accepted merge helpers and an immutable
-label-metadata view.
+optional preprocessing flags require fixtures before exposure. The legacy
+hard-edge rounding mode is not production-ready and is excluded from the
+compatibility port. It is deferred to P13 for possible repair, replacement, or
+retirement as an independent round-edge/bevel operation.
 
 Goal:
 
@@ -1094,6 +1095,7 @@ Tasks:
   - select and rename
   - smooth
   - external geometry instancing
+  - bounded loop and non-scripted control-flow core
   - scripting/expression runtime and script-dependent instruction modes
   - exporters
 - keep overlay out of the port inventory and record it as a post-port clean
@@ -1138,8 +1140,28 @@ The expected order is:
 2. profile asset identity and non-scripted resolution
 3. non-scripted select and rename
 4. smooth and non-scripted instancing
-5. scripting/expression contract and sandboxed runtime
-6. script-dependent instruction modes and control flow
+5. bounded loop and non-scripted control-flow core
+6. scripting/expression contract and sandboxed runtime
+7. expression-dependent instruction modes and control flow
+
+### P11 loop checkpoint
+
+Loop L0-L3 are implemented and recorded in `PORTING_LOOP_SOURCE_MAP.md`. The
+engine-independent bounded runtime preserves fixed/ranged/stepped iteration
+selection, ordered feedback and accumulation, zero-based index delivery,
+deterministic per-iteration seeds, early termination, hard iteration limits,
+and transactional failure that discards accumulated results. It does not add
+cycles to the general graph. Each iteration can now invoke a complete acyclic
+Phoenix function with typed `$index`, unique call-path identity, feedback
+routing, and `all`/`output` precedence. Iteration geometry effects now remain in
+a loop-owned private ledger and collapse into one outer replacement only after
+complete success; failure exposes and consumes nothing. The collapsed outer
+instruction is cacheable, loop options/body identity participate in the graph
+revision, full partial-rerun replay/restoration is covered, failures identify
+their zero-based iteration, and trace/work budgets cover nested execution.
+Linux and Apple Silicon CI run all loop suites. Loop migration participates later in the
+general P12 persistence design without prescribing JSON or binary as Phoenix's
+format. Expression-updated variables wait for scripting.
 7. project migration, exporters, and post-port work
 
 ## Phase P12: Migrate Existing Projects
@@ -1181,6 +1203,8 @@ Tasks:
 
 - define and, if justified by production needs, reimplement overlay from a new
   contract; do not treat the legacy overlay kernel as the implementation base
+- decide whether to repair, replace, or retire the non-production-ready legacy
+  hard-edge rounding mode; if retained, expose it independently from subdivision
 - evaluate `float` runtime storage using measured workloads
 - evaluate exact working-set reuse and adjacent kernel islands
 - reduce precision inside kernels where production history or new tests support

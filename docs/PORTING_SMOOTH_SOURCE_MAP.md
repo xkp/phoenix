@@ -44,7 +44,16 @@ The apparent directed-edge face-varying label code is commented out in the
 production path, so edge-label propagation is not yet claimed. Fixtures must
 pin actual production results before Phoenix defines generated edge labels.
 
-## Hard-Edge Scope
+## Deferred Hard-Edge Scope
+
+The production hard-edge rounding path is not production-ready. It is excluded
+from the compatibility port and deferred to post-port evaluation, like overlay.
+Its presence behind the legacy `smooth` command does not make it part of the
+required OpenSubdiv subdivision implementation.
+
+If retained later, it should be exposed as an independent round-edge/bevel
+kernel with a legacy persistence adapter for `smooth(method=hardEdges)`, rather
+than preserving the misleading command-level coupling.
 
 Hard-edge rounding depends on the already-ported merge family and selected
 vertex-joining helpers. It additionally uses:
@@ -74,9 +83,9 @@ where an audited one-to-one mapping exists. Labels remain stable integer IDs.
 2. S1: localize OpenSubdiv topology adapter and compile oracle
 3. S2: canonical adapter, ancestor face-label policy, IDs, and publication
 4. S3: cache, partial rerun, and platform matrix
-5. H0: localize hard-edge kernel and dependency audit
-6. H1: label metadata/amount adapter and focused oracle
-7. H2: canonical integration, transactional publication, and platform matrix
+5. Post-port H0: decide whether to repair, replace, or retire hard-edge rounding
+6. Post-port H1: if retained, define an independent kernel contract and fixtures
+7. Post-port H2: implement only after the new contract is accepted
 
 No legacy 2D arrangement geometry is in scope.
 
