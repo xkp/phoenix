@@ -1041,6 +1041,14 @@ Exit gate:
 
 ## Phase P11: Expand The Kernel And Instruction Inventory
 
+Status: inventory complete. See `PORTING_P11_INVENTORY.md`. Merge is the next
+kernel family. Overlay is explicitly excluded from the port because the
+production implementation is not production-ready; it is deferred to P13 for
+possible clean reimplementation. Profiles are classified as the most important
+persisted asset after labels and receive an independent immutable identity,
+persistence, migration, and cache contract. Styles and materials are not
+required dependencies because they may be retired.
+
 Goal:
 
 - port remaining production value systematically rather than by copying the
@@ -1049,13 +1057,17 @@ Goal:
 Tasks:
 
 - prioritize remaining functionality by production usage and dependency:
-  - overlay
   - geometry cleanup and merge operations
+  - profile assets and deterministic profile resolution
   - select and rename
   - smooth
-  - profiles and straight skeleton support
   - external geometry instancing
+  - scripting/expression runtime and script-dependent instruction modes
   - exporters
+- keep overlay out of the port inventory and record it as a post-port clean
+  implementation candidate
+- exclude the deprecated production `share` instruction from the port and emit
+  an explicit migration diagnostic when encountered
 - classify each item as:
   - preserved kernel
   - Phoenix-native value transformation
@@ -1063,7 +1075,11 @@ Tasks:
   - persistence adapter
   - deferred feature
 - maintain per-kernel golden fixtures and compatibility reports
-- add materials after geometry and labels are stable
+- add materials only if the product retains them, after geometry, labels, and
+  profiles are stable
+- treat profiles as first-class assets after labels, independent of whether
+  styles and materials are retained
+- do not make styles or materials prerequisites for profile or kernel ports
 - revisit legacy RNG compatibility only if existing randomized projects require
   identical historical output
 
@@ -1073,6 +1089,26 @@ Deliverables:
 - incremental kernel/handler ports
 - material integration plan
 - explicit deferred-feature list
+
+### P11 scripting checkpoint
+
+Scripting is a dedicated cross-cutting runtime workstream after the core
+geometry/profile ports and before migration can claim broad production-project
+coverage. Production V8 integration is an oracle for observable behavior, not a
+required engine choice. Define an engine-independent expression contract,
+deterministic seed/cache semantics, sandbox and resource limits, diagnostics,
+and portability requirements before implementing script-dependent control
+instructions, selection, rename, profile variables, instancing, or attributes.
+
+The expected order is:
+
+1. merge
+2. profile asset identity and non-scripted resolution
+3. non-scripted select and rename
+4. smooth and non-scripted instancing
+5. scripting/expression contract and sandboxed runtime
+6. script-dependent instruction modes and control flow
+7. project migration, exporters, and post-port work
 
 ## Phase P12: Migrate Existing Projects
 
@@ -1091,6 +1127,8 @@ Tasks:
 - make conflicting definitions for one UID a migration error
 - preserve function-local label visibility and rename semantics
 - map supported production instructions and options to Phoenix descriptors
+- migrate script sources and bindings only through the versioned Phoenix
+  expression contract; report unsupported production host APIs explicitly
 - report unsupported options explicitly
 - validate migrated projects through the accumulated production fixture suite
 
@@ -1109,6 +1147,8 @@ Goal:
 
 Tasks:
 
+- define and, if justified by production needs, reimplement overlay from a new
+  contract; do not treat the legacy overlay kernel as the implementation base
 - evaluate `float` runtime storage using measured workloads
 - evaluate exact working-set reuse and adjacent kernel islands
 - reduce precision inside kernels where production history or new tests support
@@ -1151,6 +1191,52 @@ Each kernel receives a short port record containing:
 
 ## Immediate Next Step
 
-Begin Phase P7 cache and partial-rerun integration. Keep P6 compatibility
-signoff provisional until the production backend can regenerate the captured
-oracle for full coordinate and label comparison.
+Begin P11 merge slice M0: localize the production 3D merge kernel family as a
+compatibility oracle, audit its shared support, and capture option-isolated
+fixtures before adapting it to canonical Phoenix geometry. Do not port the 2D
+arrangement paths or introduce overlay as a dependency.
+
+M0 audit checkpoint: `PORTING_MERGE_SOURCE_MAP.md` records the trusted source
+hashes, production option order, permitted localization changes, ownership and
+directed-label requirements, excluded 2D paths, and initial oracle corpus.
+The production 3D border-rebuild template now compiles locally under CGAL 6.2;
+its initial oracle passes empty, disconnected, and exact-shared-border meshes
+with vertex welding disabled.
+Directed-label reconstruction and duplicate-reference behavior are now pinned.
+The first M2 fixtures also bracket production's vertex-welding threshold:
+`0.5e-5` joins and `2e-5` remains separate for the `1e-5` window.
+The production `merge_faces` body and its `simplify_face` dependency are now
+localized with only compatibility includes, removal of the unused VM/context
+wrapper, and removal of debug filesystem side effects. M3 oracle fixtures pass:
+same-label coplanar neighbors merge, while different-label neighbors remain
+separate when label matching is enabled. The remaining merge boundary work is
+to pin or introduce adapter-level rejection of invalid/non-manifold input and
+prove transactional no-consumption/no-publication on that failure path before
+canonical integration.
+M4 now pins both `mergeFacesLabels` variants. The persisted boolean maps
+directly to production label matching: true preserves boundaries between
+different labels; false allows their coplanar faces to merge. In the latter
+case production retains the first traversed facet's label. Phoenix adapters
+must make that traversal deterministic by ordering inputs by item order and
+stable `FaceId`, making the earliest contributing face the survivor rather
+than depending on incidental container order.
+M5 reuses the localized production `cleanup_face3` path and preserves the
+production `joinColineal` predicate exactly. A collinear boundary vertex is
+removed only when both consecutive current-direction labels and both
+opposite-direction labels match. Oracle cases now prove successful removal and
+preservation for independent current-label and opposite-label mismatches. Only
+the 3D cleanup entry point participates in merge; the legacy 2D cleanup template
+is not part of the runtime pipeline.
+M6 composition began with a transactional production pipeline that fixes
+the option order in one place: border reconstruction/vertex joining, face
+merging with its label policy, and collinear cleanup. All mutations occur on a
+candidate mesh and the result is returned only after final topology validation.
+An all-options oracle passes, and an empty-option rejection proves the source
+mesh remains unchanged and no result escapes. Canonical aggregation, handler,
+publication, cache/partial rerun, and platform integration remain before M6 is
+complete. The canonical adapter and instruction handler are now integrated:
+ordered canonical faces promote into the exact candidate, successful results
+demote to canonical 3D geometry, and consumption is emitted only after complete
+success. Publication, cache replay, and partial-rerun failure restoration pass
+end to end. A dedicated merge workflow covers GCC on Linux and Clang on Apple
+Silicon in debug and release configurations. Merge M0-M6 is complete.

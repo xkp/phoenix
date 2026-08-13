@@ -152,6 +152,55 @@ else()
         -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(phoenix_merge_production_oracle_tests
+    tests/merge_production_oracle_tests.cpp
+)
+target_include_directories(phoenix_merge_production_oracle_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_merge_production_oracle_tests PRIVATE CGAL::CGAL)
+if(MSVC)
+    target_compile_options(phoenix_merge_production_oracle_tests PRIVATE
+        /W4 /permissive /Zc:strictStrings- /Zc:twoPhase- /bigobj
+        "/FI${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production_probe_compat.hpp")
+else()
+    target_compile_options(phoenix_merge_production_oracle_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_merge_production_adapter_tests
+    src/cache.cpp
+    src/execution.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/invalidation.cpp
+    src/labels.cpp
+    src/partial_run.cpp
+    src/partial_run_apply.cpp
+    src/partial_run_scope.cpp
+    src/randomness.cpp
+    src/scene_update.cpp
+    src/values.cpp
+    src/publication.cpp
+    src/working_geometry.cpp
+    src/working_geometry_builder.cpp
+    src/merge/production_adapter.cpp
+    src/merge/instruction.cpp
+    tests/merge_production_adapter_tests.cpp
+)
+target_include_directories(phoenix_merge_production_adapter_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_merge_production_adapter_tests PRIVATE CGAL::CGAL)
+if(MSVC)
+    target_compile_options(phoenix_merge_production_adapter_tests PRIVATE
+        /W4 /permissive /Zc:strictStrings- /Zc:twoPhase- /bigobj
+        "/FI${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production_probe_compat.hpp")
+else()
+    target_compile_options(phoenix_merge_production_adapter_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(phoenix_inset_production_oracle_tests
     tests/inset_production_oracle_tests.cpp
     $<TARGET_OBJECTS:phoenix_inset_production_oracle>
