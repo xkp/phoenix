@@ -64,6 +64,16 @@ the canonical 3D runtime mesh directly.
 | `partition_tesselator.cpp`: interpolated `compass_labels::apply` semantics | `apply_repeat_region_labels` | Ported for non-collapsed interpolation strips | Each emitted face boundary is classified as lower/upper/source/target; current side and twin/opposite labels are independently applied, including inherited defaults supplied by linked inputs. Collapsed compass overloads remain covered by collapsed straight cuts, not repeats. |
 | `partition_tesselator.{h,cpp}` | adapted production source | Pending | Publication, ID allocation, and 3D lift are boundary changes only. |
 
+## C6 Runtime Boundary
+
+| Production flow | Phoenix location | Status | Classified changes |
+| --- | --- | --- | --- |
+| `partition_command::partition_face2` repository → solver → tessellator flow | `production_adapter.{hpp,cpp}` | End-to-end adapter implemented | Command context and model loading are replaced by linked request data; projection/lift, fresh published IDs, stable integer labels, deterministic seed, success-only source-face consumption, and publication-ledger replacement are Phoenix boundaries. Production repository, plan, solver, and tessellator calls retain their ordering. |
+| `var_bezier_options::to_bezier_options` and generic solver error factory | `ported/compatibility_runtime.cpp` | Link boundary implemented | Bezier option resolution is ported directly over the scalar context. Generic solver errors retain codes/messages without importing application error registration. |
+| Production recursive, repeat, Bezier, and constrained model execution | `partition_production_adapter_tests.cpp` | End-to-end parity coverage implemented | Fixtures construct production `partition_cut` trees and production constraints directly. Assertions cover published face topology, recursive face labels, repeat labels, Bezier subdivision, and constraint-plan execution; no alternate partition algorithm is involved. |
+| Phoenix partition instruction execution | `partition/instruction.{hpp,cpp}` | Runtime boundary implemented | A fresh-model factory links configuration to the production model so its lazy plan cache is item-local. Canonical face fan-out, per-item seed derivation, structured failure routing, geometry-collection output, and publication effects use shared Phoenix execution infrastructure. No solver or tessellator behavior is duplicated. |
+| Production support-header include graph | `ported/geometry_{constants,types,utils}.h`, `ported/error.h`, `ported/solver_errors.h` | Localized and self-contained | Source hashes are recorded in the production manifest. Geometry and error bodies are retained; includes are localized. The unreachable SVG/file diagnostics region and timer dependency are dropped. CMake and compiler dependency evidence contain no production-checkout path. |
+
 ## Rules for Future Entries
 
 - Copy the audited production function before editing it.

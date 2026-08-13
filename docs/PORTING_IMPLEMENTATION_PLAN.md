@@ -693,6 +693,42 @@ Commit hygiene: the accumulated port is split by the binding review plan in
 future end-to-end adapter are separate commits; shared build/test/documentation
 files require hunk-level staging.
 
+C6 end-to-end adapter status: the first production-backed runtime path is
+complete. `production_adapter.{hpp,cpp}` accepts a canonical 3D face reference,
+an already-linked production `partition_model`, immutable scalar values,
+label-based base-segment bindings, and a deterministic seed. It projects the
+face into an invocation-local exact production arrangement, runs the production
+repository/plan/solver/tessellator, lifts result faces back to canonical 3D,
+preserves face and directed-halfedge label integers, allocates fresh published
+geometry IDs, and emits a publication effect consuming the source face only on
+success. The integration fixture covers an empty-model round trip, a real
+deterministic one-cut model, face/cut label propagation, and publication-ledger
+replacement without retaining the overlapping original.
+Extended C6 parity coverage now runs the same adapter with production-shaped
+models for recursive cuts, repeat-by-count distribution with a secondary gap,
+Bezier insertion, and a production `segment_distance_constraint`. These are
+runtime executions of the imported production plan/solver/tessellator, not
+parallel Phoenix implementations. Each fixture uses a fresh model so its
+cached plan cannot leak between cases.
+The Phoenix instruction boundary is now implemented in
+`partition/instruction.{hpp,cpp}`. It fans canonical input faces into
+independent partition items, derives deterministic per-face seeds, publishes
+successful replacement geometry, routes failed source faces through structured
+item failures without consuming them, and returns a geometry collection. Its
+linked-model contract is deliberately a factory: every item receives a fresh
+production `partition_model`, preventing the production model's lazy plan cache
+from becoming shared mutable state across faces or workers. End-to-end tests
+cover publication/consumption, execution-cache reuse, failure context, and
+deterministic two-face fan-out for one- and four-worker requests.
+
+The production support-header include graph is now localized under
+`partition/ported`. Production geometry constants, types, utility bodies, and
+error contracts are hash-pinned in the manifest. SVG/file output and timers are
+dropped as diagnostics-only code. `PHOENIX_PRODUCTION_SOLVER_ROOT` has been
+removed from CMake, and the compiler dependency database confirms that no file
+from the production checkout participates in either partition target. Platform
+matrix execution remains the final external verification step.
+
 Status: source-boundary audit and extended-DCEL adapter slice complete; solver
 port reset to the audited production boundary, and tessellation is not started.
 Correction checkpoint: the later `trusted_*`, `adapted_*`, `PlanExecutor`,

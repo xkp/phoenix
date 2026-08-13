@@ -3,9 +3,9 @@
 Authoritative root used for the compatibility spike:
 `C:/Users/emili/source/repos/threedee.io/threedee.solver`.
 
-The compile probe consumes these files directly and read-only. The final port
-will preserve the same relative names beneath `partition/ported`; until that
-copy is complete, no hand-transcribed file is an accepted substitute.
+The production checkout is a read-only comparison oracle. The compile probe
+now consumes only localized files beneath `partition/ported`; it has no build
+or include dependency on the external checkout.
 
 The complete set is now copied beneath `partition/ported/production` and
 `src/partition/ported/production`. Normalized content identity was verified for
@@ -24,6 +24,21 @@ the local copies. The external checkout remains the immutable comparison oracle.
 | `backend/partition/partition_tesselator.cpp` | 1703 | `0EF7CDD235CF070EBC8A36EF6AF8CCF6552DC3ED413DC33562F38605FB03662F` |
 | `backend/partition/partition_errors.h` | 43 | `88FF56FCFBA27753A38F0B86E42F50F69792BDE78E433FAF2FD185A3107C1E5B` |
 | `backend/partition/partition_errors.cpp` | 75 | `65DBE35D49CB182636A6631A7726B99FF8EA25DAFD90BD59B9D1EBD3177F6FB6` |
+
+Partition also reaches the following production support headers. Their source
+hashes were captured before localization:
+
+| Support source | SHA-256 | Phoenix treatment |
+| --- | --- | --- |
+| `backend/geometry_constants.h` | `F6C6089ACA1C7370B0E4EADF69D706F1E2DD219595CB6534A3E74DD69917F591` | Copied locally unchanged apart from line endings. |
+| `backend/geometry_types.h` | `F2F63BCDBD01C13D286FE9E61AFDE2674C13F82C0F043484488291FCF79CC943` | Copied locally unchanged apart from line endings. |
+| `backend/geometry_utils.h` | `C0EFF079BD92BCAD887DD6401600FEB2CAA26C5E4B392410B44F266D282F2D68` | Geometry bodies retained; SVG/file diagnostics removed and includes localized. |
+| `backend/error.h` | `AB6E156C2184A866406DEED4F291CCA975ABF980CEA09B695791C93F76C86E04` | Copied locally unchanged apart from line endings. |
+| `solver_errors.h` | `117E10A3E94390ED79BA1E1E911439E3E32F80688F8160CA2AE13B356162C804` | Copied locally with its error include localized. |
+
+`backend/timer.h` and `backend/simple_svg_1.0.0.hpp` are not reachable algorithm
+dependencies. All uses were diagnostic or commented, so they were dropped at
+the same diagnostics boundary as `debug_json`.
 
 ## Compile-Probe Policy
 

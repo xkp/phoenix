@@ -2,8 +2,8 @@
 
 #include <boost/smart_ptr.hpp>
 #include <CGAL/exceptions.h>
-#include "backend/geometry_types.h"
-#include "backend/geometry_utils.h"
+#include "phoenix/partition/ported/geometry_types.h"
+#include "phoenix/partition/ported/geometry_utils.h"
 #include "phoenix/partition/ported/bezier_utils.h"
 
 CGAL_TYPES(GeometryKernel)

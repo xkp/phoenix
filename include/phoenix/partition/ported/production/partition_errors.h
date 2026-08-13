@@ -1,6 +1,6 @@
 #pragma once
 
-#include "backend/error.h"
+#include "../error.h"
 
 enum PARTITION_ERRORS
 {
@@ -41,4 +41,3 @@ public:
 	static solver_error create(PARTITION_ERRORS id, property_tree& data);
 };
 #pragma once
-

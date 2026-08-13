@@ -6,6 +6,7 @@
 #include <CGAL/Arr_observer.h>
 
 #include <boost/variant/get.hpp>
+#include <boost/variant.hpp>
 
 #include <variant>
 

@@ -83,7 +83,7 @@ Required verification:
 
 ## C6 — End-to-end Phoenix partition adapter
 
-This is the next feature commit and does not exist yet. It will contain:
+This feature commit is now implemented. It contains:
 
 - canonical 3D face projection into invocation-local exact geometry
 - construction and execution of the production solver/tessellator
@@ -91,6 +91,12 @@ This is the next feature commit and does not exist yet. It will contain:
 - consumed-face replacement semantics
 - lift back to canonical 3D geometry
 - end-to-end parity fixtures
+
+The fixtures exercise a deterministic straight cut between two label-bound
+base segments, recursive child cuts through production-generated segment IDs,
+repeat-by-count distribution, Bezier cut insertion, and an actual production
+distance constraint. They verify published topology and labels as well as
+successful source-face replacement.
 
 Keeping C6 separate prevents runtime integration decisions from obscuring the
 review of the production source import and compatibility boundary.
@@ -103,4 +109,3 @@ review of the production source import and compatibility boundary.
 They must be staged by hunk (`git add -p`) or split with temporary index-only
 patches. Do not stage these files wholesale until their unrelated hunks have
 already landed.
-

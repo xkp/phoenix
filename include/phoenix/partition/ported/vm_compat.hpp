@@ -20,10 +20,12 @@ struct icontext {
     std::unordered_map<std::string, double> values;
     mutable int next_vertex_id{0};
     mutable int next_edge_id{0};
+    int level_of_detail{1};
 
     [[nodiscard]] const icontext* fctx() const noexcept { return this; }
     [[nodiscard]] int vertex_id() const noexcept { return ++next_vertex_id; }
     [[nodiscard]] int edge_id() const noexcept { return ++next_edge_id; }
+    [[nodiscard]] int lod() const noexcept { return level_of_detail; }
 
     template <typename Arrangement, typename Halfedge, typename Point>
     Halfedge split_edge(Arrangement& arrangement, Halfedge source,
@@ -45,6 +47,7 @@ struct icontext {
 };
 
 using const_icontext_ref = std::shared_ptr<const icontext>;
+using icontext_ref = std::shared_ptr<icontext>;
 
 class variable_value {
 public:

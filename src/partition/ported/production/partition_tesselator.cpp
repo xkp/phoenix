@@ -3,7 +3,6 @@
 #include "partition_tesselator.h"
 #include "partition_errors.h"
 #include "../geometry_ops.h"
-#include "../timer.h"
 #include "../bezier_utils.h"
 #include <CGAL/Arr_batched_point_location.h>
 

@@ -75,11 +75,7 @@ else()
     target_compile_options(phoenix_label_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-set(PHOENIX_PRODUCTION_SOLVER_ROOT
-    "C:/Users/emili/source/repos/threedee.io/threedee.solver"
-    CACHE PATH "Read-only production solver checkout used by the partition compatibility probe")
-if(EXISTS "${PHOENIX_PRODUCTION_SOLVER_ROOT}/backend/partition/partition_solver.cpp")
-    add_library(phoenix_partition_production_probe OBJECT EXCLUDE_FROM_ALL
+add_library(phoenix_partition_production_probe OBJECT EXCLUDE_FROM_ALL
         src/partition/ported/production/partition_solver.cpp
         src/partition/ported/production/partition_solver_constraints.cpp
         src/partition/ported/production/partition_tesselator.cpp
@@ -88,9 +84,6 @@ if(EXISTS "${PHOENIX_PRODUCTION_SOLVER_ROOT}/backend/partition/partition_solver.
     target_include_directories(phoenix_partition_production_probe PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production"
-        "${PHOENIX_PRODUCTION_SOLVER_ROOT}"
-        "${PHOENIX_PRODUCTION_SOLVER_ROOT}/backend"
-        "${PHOENIX_PRODUCTION_SOLVER_ROOT}/backend/partition"
     )
     target_link_libraries(phoenix_partition_production_probe PRIVATE CGAL::CGAL)
     if(MSVC)
@@ -101,7 +94,32 @@ if(EXISTS "${PHOENIX_PRODUCTION_SOLVER_ROOT}/backend/partition/partition_solver.
         target_compile_options(phoenix_partition_production_probe PRIVATE
             -Wall -Wextra -Wpedantic)
     endif()
-endif()
+
+add_executable(phoenix_partition_production_adapter_tests
+        src/geometry.cpp
+        src/labels.cpp
+        src/publication.cpp
+        src/working_geometry.cpp
+        src/working_geometry_builder.cpp
+        src/partition/working_face.cpp
+        src/partition/ported/compatibility_runtime.cpp
+        src/partition/production_adapter.cpp
+        tests/partition_production_adapter_tests.cpp
+        $<TARGET_OBJECTS:phoenix_partition_production_probe>
+    )
+    target_include_directories(phoenix_partition_production_adapter_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production"
+    )
+    target_link_libraries(phoenix_partition_production_adapter_tests PRIVATE CGAL::CGAL)
+    if(MSVC)
+        target_compile_options(phoenix_partition_production_adapter_tests PRIVATE
+            /W4 /permissive /Zc:strictStrings- /Zc:twoPhase- /bigobj
+            "/FI${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production_probe_compat.hpp")
+    else()
+        target_compile_options(phoenix_partition_production_adapter_tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+    endif()
 
 add_executable(phoenix_geometry_tests
     src/geometry.cpp
@@ -276,6 +294,37 @@ if(MSVC)
     target_compile_options(phoenix_partition_working_face_tests PRIVATE /W4 /permissive-)
 else()
     target_compile_options(phoenix_partition_working_face_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_partition_instruction_tests
+    src/cache.cpp
+    src/execution.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/publication.cpp
+    src/randomness.cpp
+    src/values.cpp
+    src/working_geometry.cpp
+    src/working_geometry_builder.cpp
+    src/partition/instruction.cpp
+    src/partition/working_face.cpp
+    src/partition/production_adapter.cpp
+    src/partition/ported/compatibility_runtime.cpp
+    tests/partition_instruction_tests.cpp
+    $<TARGET_OBJECTS:phoenix_partition_production_probe>
+)
+target_include_directories(phoenix_partition_instruction_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production"
+)
+target_link_libraries(phoenix_partition_instruction_tests PRIVATE CGAL::CGAL)
+if(MSVC)
+    target_compile_options(phoenix_partition_instruction_tests PRIVATE
+        /W4 /permissive /Zc:strictStrings- /Zc:twoPhase- /bigobj
+        "/FI${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production_probe_compat.hpp")
+else()
+    target_compile_options(phoenix_partition_instruction_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 add_executable(phoenix_partition_plan_tests
