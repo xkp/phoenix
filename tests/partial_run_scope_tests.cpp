@@ -203,6 +203,34 @@ bool test_resolved_request_can_drive_rerun_apply()
         && scene.root.children[2].id == "after";
 }
 
+bool test_scope_carries_consumption_cache_services()
+{
+    const auto function = make_actor_function("rerun_actor");
+    const auto plan = make_plan(true, false);
+    auto request = make_scope_request(plan, function);
+    phoenix::MemoryCacheStore cache;
+    phoenix::GeometryPublicationLedger ledger;
+    phoenix::RunElementIdAllocator ids;
+    request.cache_store = &cache;
+    request.cache_writer = &cache;
+    request.publication_ledger = &ledger;
+    request.element_ids = &ids;
+    request.label_registry_fingerprint = 17;
+    request.kernel_version = "kernel-v2";
+    request.adapter_version = "adapter-v3";
+    request.repair_policy_version = "repair-v4";
+
+    const auto result = phoenix::PartialRerunScopeResolver{}.resolve(request);
+    if (!result.execution_request) return false;
+    const auto& execution = *result.execution_request;
+    return execution.cache_store == &cache && execution.cache_writer == &cache
+        && execution.publication_ledger == &ledger && execution.element_ids == &ids
+        && execution.label_registry_fingerprint == 17
+        && execution.kernel_version == "kernel-v2"
+        && execution.adapter_version == "adapter-v3"
+        && execution.repair_policy_version == "repair-v4";
+}
+
 bool test_status_strings_are_stable()
 {
     return std::string{phoenix::to_string(phoenix::PartialRerunScopeStatus::resolved)}
@@ -233,6 +261,7 @@ int main()
     ok = run_test("non actor subtree plan has no actor rerun", test_non_actor_subtree_plan_has_no_actor_rerun) && ok;
     ok = run_test("missing actor id is invalid", test_missing_actor_id_is_invalid) && ok;
     ok = run_test("resolved request can drive rerun apply", test_resolved_request_can_drive_rerun_apply) && ok;
+    ok = run_test("scope carries consumption cache services", test_scope_carries_consumption_cache_services) && ok;
     ok = run_test("status strings are stable", test_status_strings_are_stable) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;

@@ -240,6 +240,10 @@ struct FunctionExecutionRequest {
     std::optional<std::size_t> parent_scope_index;
     GeometryPublicationLedger* publication_ledger = nullptr;
     RunElementIdAllocator* element_ids = nullptr;
+    std::uint64_t label_registry_fingerprint = 0;
+    std::string kernel_version;
+    std::string adapter_version;
+    std::string repair_policy_version;
 };
 
 struct FunctionExecutionResult {

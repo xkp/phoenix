@@ -1,5 +1,7 @@
 #include "phoenix/partial_run.hpp"
 
+#include <algorithm>
+
 namespace phoenix {
 
 namespace {
@@ -37,7 +39,20 @@ bool has_supplied_cache_identity(const CacheIdentity& identity)
         || !identity.call_path.empty()
         || !identity.graph_revision.empty()
         || !identity.input_fingerprint.empty()
-        || identity.global_seed != 0;
+        || identity.global_seed != 0
+        || identity.label_registry_fingerprint != 0
+        || !identity.kernel_version.empty()
+        || !identity.adapter_version.empty()
+        || !identity.repair_policy_version.empty();
+}
+
+bool function_consumes_geometry(const FunctionDescriptor* function)
+{
+    return function != nullptr && std::any_of(
+        function->instructions.begin(), function->instructions.end(),
+        [](const InstructionDescriptor& instruction) {
+            return instruction.consumes_geometry;
+        });
 }
 
 } // namespace
@@ -57,6 +72,10 @@ PartialRerunPlan PartialRerunPlanner::plan(const PartialRerunRequest& request) c
             request.call_path,
             request.inputs,
             request.global_seed,
+            request.label_registry_fingerprint,
+            request.kernel_version,
+            request.adapter_version,
+            request.repair_policy_version,
         });
 
     for (const auto node_id : plan.invalidation.dirty_instructions) {
@@ -78,9 +97,8 @@ PartialRerunPlan PartialRerunPlanner::plan(const PartialRerunRequest& request) c
         FunctionCallCacheKeyInput key_input;
         key_input.identity = cache_identity;
         plan.function_call_key = cache_key_builder_.function_call(key_input);
-        plan.function_call_cache_hit = has_function_call_cache_hit(
-            request.cache_store,
-            *plan.function_call_key);
+        plan.function_call_cache_hit = !function_consumes_geometry(request.function)
+            && has_function_call_cache_hit(request.cache_store, *plan.function_call_key);
     }
 
     if (plan.invalidation.actor_subtree_affected && request.actor_id.has_value()) {
@@ -88,9 +106,8 @@ PartialRerunPlan PartialRerunPlanner::plan(const PartialRerunRequest& request) c
         key_input.identity = cache_identity;
         key_input.actor_id = *request.actor_id;
         plan.actor_subtree_key = cache_key_builder_.actor_subtree(key_input);
-        plan.actor_subtree_cache_hit = has_actor_subtree_cache_hit(
-            request.cache_store,
-            *plan.actor_subtree_key);
+        plan.actor_subtree_cache_hit = !function_consumes_geometry(request.function)
+            && has_actor_subtree_cache_hit(request.cache_store, *plan.actor_subtree_key);
     }
 
     return plan;

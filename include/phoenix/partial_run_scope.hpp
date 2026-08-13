@@ -24,6 +24,14 @@ struct PartialRerunScopeRequest {
     ExecutionContext context;
     std::optional<ActorId> actor_id;
     std::optional<NodeId> caller_node_id;
+    const CacheStore* cache_store = nullptr;
+    CacheWriter* cache_writer = nullptr;
+    GeometryPublicationLedger* publication_ledger = nullptr;
+    RunElementIdAllocator* element_ids = nullptr;
+    std::uint64_t label_registry_fingerprint = 0;
+    std::string kernel_version;
+    std::string adapter_version;
+    std::string repair_policy_version;
 };
 
 struct PartialRerunScopeResult {

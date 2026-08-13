@@ -38,6 +38,14 @@ PartialRerunScopeResult PartialRerunScopeResolver::resolve(
     execution_request.input_defaults = request.input_defaults;
     execution_request.context = std::move(context);
     execution_request.call_stack = std::move(call_stack);
+    execution_request.cache_store = request.cache_store;
+    execution_request.cache_writer = request.cache_writer;
+    execution_request.publication_ledger = request.publication_ledger;
+    execution_request.element_ids = request.element_ids;
+    execution_request.label_registry_fingerprint = request.label_registry_fingerprint;
+    execution_request.kernel_version = request.kernel_version;
+    execution_request.adapter_version = request.adapter_version;
+    execution_request.repair_policy_version = request.repair_policy_version;
 
     return PartialRerunScopeResult{
         PartialRerunScopeStatus::resolved,

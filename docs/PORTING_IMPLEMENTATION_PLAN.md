@@ -561,6 +561,33 @@ Exit gate:
 
 ## Phase P7: Integrate Extrusion With Cache And Partial Reruns
 
+Status: complete. Instruction cache entries now retain canonical
+`GeometryItemEffect` records as well as outputs. Consuming extrusion cache hits
+replay generated runtime geometry and consumed source-face identities through
+the publication ledger; no working CGAL geometry is cached. Cache identity now
+includes the label-registry fingerprint and explicit kernel, adapter, and
+repair-policy versions in addition to graph, input geometry, call path, and
+seed identity. A changed identity replaces the prior publication scope and a
+non-consuming replacement restores the original face. Focused uncached/cache
+replay/scope-replacement coverage and all regression executables pass.
+
+Whole-function cache snapshots are bypassed when a consuming function is
+executing with a live publication ledger, because returning only its actor
+snapshot would skip consumption replay. The partial-rerun planner likewise
+rejects function-call and actor-subtree snapshot shortcuts for consuming
+graphs. Resolved rerun scopes now carry the shared cache, publication ledger,
+run ID allocator, label fingerprint, and kernel/adapter/repair versions into
+execution, allowing instruction-level cache hits to replay consumption safely.
+Non-consuming function-call and actor-generation caching retain their existing
+behavior. An end-to-end fixture now runs the real extrusion kernel, plans and
+resolves a public partial rerun, replays the cached canonical effects without a
+second kernel invocation, applies the actor replacement to the scene, and
+matches the full-run geometry fingerprint. A changed kernel identity then
+reruns the same scope with no successful consumption, removes the stale
+replacement, restores the original face, and updates the scene. This proves
+full, cached, and changed partial-run publication equivalence for the initial
+extrusion milestone.
+
 Goal:
 
 - make concrete extrusion results participate safely in Phoenix cache and

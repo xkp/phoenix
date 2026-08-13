@@ -819,7 +819,8 @@ void publish_instruction_cache_entry(
     const CacheIdentity& cache_identity,
     NodeId node_id,
     std::optional<SeedValue> effective_seed,
-    const std::vector<PortValue>& outputs)
+    const std::vector<PortValue>& outputs,
+    const std::vector<GeometryItemEffect>& geometry_effects)
 {
     if (cache_writer == nullptr) {
         return;
@@ -834,6 +835,7 @@ void publish_instruction_cache_entry(
     InstructionCacheEntry entry;
     entry.key = key_builder.instruction_outputs(key_input);
     entry.outputs = outputs;
+    entry.geometry_effects = geometry_effects;
     cache_writer->put_instruction(std::move(entry));
 }
 
@@ -955,7 +957,7 @@ struct TimedInstructionWorkResult {
     std::uint64_t elapsed_microseconds = 0;
 };
 
-std::optional<std::vector<PortValue>> cached_instruction_outputs(
+std::optional<InstructionCacheEntry> cached_instruction_result(
     const CacheStore* cache_store,
     const CacheIdentity& cache_identity,
     NodeId node_id,
@@ -1120,7 +1122,6 @@ InstructionPublicationResult publish_instruction_execution(
     }
 
     if (!input.instruction_cache_hit
-        && !input.instruction->consumes_geometry
         && !publication.geometry_owner_conflict
         && instruction_result.failures.empty()) {
         publish_instruction_cache_entry(
@@ -1128,7 +1129,8 @@ InstructionPublicationResult publish_instruction_execution(
             *input.cache_identity,
             input.node_id,
             input.effective_seed,
-            instruction_result.produced_outputs);
+            instruction_result.produced_outputs,
+            instruction_result.geometry_effects);
     }
 
     if (!instruction_result.failures.empty()) {
@@ -1183,15 +1185,16 @@ InstructionWorkResult execute_instruction_work(const InstructionWorkInput& input
         return result;
     }
 
-    if (!instruction.consumes_geometry) {
-        if (auto cached_outputs = cached_instruction_outputs(
+    if (!instruction.called_function_id.has_value()) {
+        if (auto cached_result = cached_instruction_result(
             input.request->cache_store,
             *input.cache_identity,
             node_id,
             frame.effective_seed)) {
             result.instruction_cache_hit = true;
             result.instruction_result.node_id = node_id;
-            result.instruction_result.produced_outputs = *cached_outputs;
+            result.instruction_result.produced_outputs = cached_result->outputs;
+            result.instruction_result.geometry_effects = cached_result->geometry_effects;
             return result;
         }
     }
@@ -1400,7 +1403,7 @@ bool commit_completed_instruction_work(
         PublicationScopeKey{function.id, completed.frame.context.call_path, node_id},
         current_actor_id,
         completed.instruction->consumes_geometry,
-        std::move(instruction_result.geometry_effects));
+        instruction_result.geometry_effects);
     for (const auto& item : geometry_publication.diagnostics) {
         if (item.code != PublicationDiagnosticCode::failed_item_attempted_consumption) continue;
         instruction_result.failures.push_back(InstructionFailure{
@@ -1690,7 +1693,7 @@ std::optional<FunctionExecutionResult> cached_function_result(
     return result;
 }
 
-std::optional<std::vector<PortValue>> cached_instruction_outputs(
+std::optional<InstructionCacheEntry> cached_instruction_result(
     const CacheStore* cache_store,
     const CacheIdentity& cache_identity,
     NodeId node_id,
@@ -1712,7 +1715,7 @@ std::optional<std::vector<PortValue>> cached_instruction_outputs(
         return std::nullopt;
     }
 
-    return cached->outputs;
+    return cached;
 }
 
 std::vector<NodeRuntimeState> ordered_states(const FunctionDescriptor& function, const RuntimeStateMap& states)
@@ -1963,9 +1966,20 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
         request.context.call_path,
         request.inputs,
         request.context.global_seed,
+        request.label_registry_fingerprint,
+        request.kernel_version,
+        request.adapter_version,
+        request.repair_policy_version,
     });
-    if (auto cached_result = cached_function_result(request.cache_store, cache_identity)) {
-        return *cached_result;
+    const bool function_consumes_geometry = std::any_of(
+        function.instructions.begin(), function.instructions.end(),
+        [](const InstructionDescriptor& instruction) {
+            return instruction.consumes_geometry;
+        });
+    if (request.publication_ledger == nullptr || !function_consumes_geometry) {
+        if (auto cached_result = cached_function_result(request.cache_store, cache_identity)) {
+            return *cached_result;
+        }
     }
 
     GeometryPublicationLedger local_geometry_ledger;

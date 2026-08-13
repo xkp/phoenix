@@ -3,6 +3,7 @@
 #include "phoenix/actors.hpp"
 #include "phoenix/common.hpp"
 #include "phoenix/graph.hpp"
+#include "phoenix/publication.hpp"
 #include "phoenix/values.hpp"
 
 #include <cstdint>
@@ -23,6 +24,10 @@ struct CacheIdentity {
     std::string graph_revision;
     std::string input_fingerprint;
     SeedValue global_seed = 0;
+    std::uint64_t label_registry_fingerprint = 0;
+    std::string kernel_version;
+    std::string adapter_version;
+    std::string repair_policy_version;
 };
 
 struct InstructionCacheKeyInput {
@@ -59,6 +64,10 @@ struct CacheIdentityInput {
     FunctionCallPath call_path;
     std::vector<PortValue> inputs;
     SeedValue global_seed = 0;
+    std::uint64_t label_registry_fingerprint = 0;
+    std::string kernel_version;
+    std::string adapter_version;
+    std::string repair_policy_version;
 };
 
 class CacheIdentityBuilder {
@@ -71,6 +80,7 @@ public:
 struct InstructionCacheEntry {
     CacheKey key;
     std::vector<PortValue> outputs;
+    std::vector<GeometryItemEffect> geometry_effects;
 };
 
 struct FunctionCallCacheEntry {

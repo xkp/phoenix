@@ -202,9 +202,14 @@ add_executable(phoenix_extrusion_instruction_tests
     src/extrusion/profile.cpp
     src/geometry.cpp
     src/graph.cpp
+    src/invalidation.cpp
     src/labels.cpp
+    src/partial_run.cpp
+    src/partial_run_apply.cpp
+    src/partial_run_scope.cpp
     src/publication.cpp
     src/randomness.cpp
+    src/scene_update.cpp
     src/values.cpp
     src/working_geometry.cpp
     src/working_geometry_builder.cpp

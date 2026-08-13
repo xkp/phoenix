@@ -259,6 +259,38 @@ bool test_partial_plan_detects_actor_subtree_cache_hit()
         && plan.actor_subtree_cache_hit;
 }
 
+bool test_consuming_plan_does_not_shortcut_through_actor_snapshot()
+{
+    auto function = make_function();
+    function.generates_actor = true;
+    function.instructions[1].consumes_geometry = true;
+    const auto identity = make_identity();
+    const phoenix::CacheKeyBuilder key_builder;
+
+    phoenix::MemoryCacheStore cache_store;
+    phoenix::ActorSubtreeCacheKeyInput subtree_input;
+    subtree_input.identity = identity;
+    subtree_input.actor_id = "actor:root";
+    phoenix::ActorSubtreeCacheEntry subtree;
+    subtree.key = key_builder.actor_subtree(subtree_input);
+    subtree.actor.id = "actor:root";
+    cache_store.put_actor_subtree(subtree);
+    phoenix::FunctionCallCacheEntry function_call;
+    function_call.key = key_builder.function_call({identity});
+    cache_store.put_function_call(function_call);
+
+    phoenix::PartialRerunRequest request;
+    request.function = &function;
+    request.changed_instructions = {2};
+    request.cache_identity = identity;
+    request.actor_id = "actor:root";
+    request.cache_store = &cache_store;
+
+    const auto plan = phoenix::PartialRerunPlanner{}.plan(request);
+    return plan.actor_subtree_key.has_value() && !plan.actor_subtree_cache_hit
+        && plan.function_call_key.has_value() && !plan.function_call_cache_hit;
+}
+
 bool test_leaf_partial_plan_has_no_function_cache_key()
 {
     auto function = make_function();
@@ -300,6 +332,7 @@ int main()
     ok = run_test("partial plan derives cache identity when not supplied", test_partial_plan_derives_cache_identity_when_not_supplied) && ok;
     ok = run_test("partial plan detects function call cache hit", test_partial_plan_detects_function_call_cache_hit) && ok;
     ok = run_test("partial plan detects actor subtree cache hit", test_partial_plan_detects_actor_subtree_cache_hit) && ok;
+    ok = run_test("consuming plan bypasses actor snapshot", test_consuming_plan_does_not_shortcut_through_actor_snapshot) && ok;
     ok = run_test("leaf partial plan has no function cache key", test_leaf_partial_plan_has_no_function_cache_key) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;

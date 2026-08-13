@@ -24,6 +24,10 @@ struct PartialRerunRequest {
     FunctionCallPath call_path;
     std::vector<PortValue> inputs;
     SeedValue global_seed = 0;
+    std::uint64_t label_registry_fingerprint = 0;
+    std::string kernel_version;
+    std::string adapter_version;
+    std::string repair_policy_version;
     std::unordered_map<NodeId, SeedValue> effective_instruction_seeds;
     std::optional<ActorId> actor_id;
     const CacheStore* cache_store = nullptr;

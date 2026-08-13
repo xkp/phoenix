@@ -45,6 +45,14 @@ void append_identity(std::ostringstream& stream, const CacheIdentity& identity)
     append_field(stream, identity.input_fingerprint);
     append_separator(stream);
     append_number_field(stream, identity.global_seed);
+    append_separator(stream);
+    append_number_field(stream, identity.label_registry_fingerprint);
+    append_separator(stream);
+    append_field(stream, identity.kernel_version);
+    append_separator(stream);
+    append_field(stream, identity.adapter_version);
+    append_separator(stream);
+    append_field(stream, identity.repair_policy_version);
 }
 
 CacheKey make_key(const char* kind, const CacheIdentity& identity)
@@ -442,6 +450,10 @@ CacheIdentity CacheIdentityBuilder::identity(const CacheIdentityInput& input) co
     identity.call_path = input.call_path;
     identity.input_fingerprint = input_fingerprint(input.inputs);
     identity.global_seed = input.global_seed;
+    identity.label_registry_fingerprint = input.label_registry_fingerprint;
+    identity.kernel_version = input.kernel_version;
+    identity.adapter_version = input.adapter_version;
+    identity.repair_policy_version = input.repair_policy_version;
     return identity;
 }
 
