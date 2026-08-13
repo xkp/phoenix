@@ -267,6 +267,12 @@ can be made with the full context available.
 - Major geometry kernels such as extrusion, partition, and inset multiplex once
   per input face unless their accepted kernel contract explicitly says
   otherwise.
+- Inset follows the minimal-change production-port discipline for its source
+  audit and compatibility oracle. Its intended Phoenix implementation reuses
+  the extrusion kernel because the algorithms are equivalent, but reuse is
+  accepted only after differential fixtures verify topology, labels, precision,
+  failure, and consumption parity. Non-equivalent behavior remains behind a
+  narrow inset-specific adapter rather than being discarded.
 
 ### Geometry Publication And Face Consumption
 

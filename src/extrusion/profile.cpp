@@ -9,21 +9,29 @@ namespace phoenix::extrusion {
 
 std::shared_ptr<const Profile> Profile::create(std::vector<ProfileSegment> segments)
 {
+    CGAL::Sign sign = CGAL::ZERO;
+    for (const auto& segment : segments) {
+        if (segment.delta_y == 0.0) continue;
+        sign = segment.delta_y > 0.0 ? CGAL::POSITIVE : CGAL::NEGATIVE;
+        break;
+    }
+    return create(std::move(segments), sign);
+}
+
+std::shared_ptr<const Profile> Profile::create(
+    std::vector<ProfileSegment> segments, CGAL::Sign sign)
+{
     if (segments.empty()) return nullptr;
     for (const auto& segment : segments) {
         if (!std::isfinite(segment.delta_x) || !std::isfinite(segment.delta_y)
             || (segment.delta_x == 0.0 && segment.delta_y == 0.0)) return nullptr;
     }
-    return std::shared_ptr<const Profile>(new Profile(std::move(segments)));
+    return std::shared_ptr<const Profile>(new Profile(std::move(segments), sign));
 }
 
 CGAL::Sign Profile::sign() const noexcept
 {
-    for (const auto& segment : segments_) {
-        if (segment.delta_y == 0.0) continue;
-        return segment.delta_y > 0.0 ? CGAL::POSITIVE : CGAL::NEGATIVE;
-    }
-    return CGAL::ZERO;
+    return sign_;
 }
 
 std::pair<double, double> Profile::direction(std::size_t index) const

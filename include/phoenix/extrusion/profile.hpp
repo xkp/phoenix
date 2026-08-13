@@ -27,6 +27,8 @@ class Profile final {
 public:
     [[nodiscard]] static std::shared_ptr<const Profile> create(
         std::vector<ProfileSegment> segments);
+    [[nodiscard]] static std::shared_ptr<const Profile> create(
+        std::vector<ProfileSegment> segments, CGAL::Sign sign);
 
     [[nodiscard]] std::size_t size() const noexcept { return segments_.size(); }
     [[nodiscard]] const ProfileSegment& segment(std::size_t index) const { return segments_.at(index); }
@@ -35,8 +37,10 @@ public:
     [[nodiscard]] double delta(std::size_t index) const { return segment(index).delta_y; }
 
 private:
-    explicit Profile(std::vector<ProfileSegment> segments) : segments_(std::move(segments)) {}
+    Profile(std::vector<ProfileSegment> segments, CGAL::Sign sign)
+        : segments_(std::move(segments)), sign_(sign) {}
     std::vector<ProfileSegment> segments_;
+    CGAL::Sign sign_ = CGAL::ZERO;
 };
 
 using ProfileRef = std::shared_ptr<const Profile>;

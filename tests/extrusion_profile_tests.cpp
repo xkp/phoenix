@@ -24,6 +24,14 @@ int main()
         face, profile, phoenix::LabelId{30}, phoenix::LabelId{31}, phoenix::LabelId{32},
         phoenix::LabelId{33}, phoenix::LabelId{34}, phoenix::LabelId{35});
     const auto direction = profile->direction(1);
+    const auto horizontal_only = phoenix::extrusion::Profile::create({
+        {1.0, 0.0, phoenix::LabelId{40}, phoenix::LabelId{41},
+            phoenix::LabelId{42}, phoenix::LabelId{43}, phoenix::LabelId{44},
+            phoenix::LabelId{45}, true}}, CGAL::POSITIVE);
+    const auto horizontal_input = phoenix::extrusion::make_kernel_input(
+        face, horizontal_only, phoenix::LabelId{30}, phoenix::LabelId{31},
+        phoenix::LabelId{32}, phoenix::LabelId{33}, phoenix::LabelId{34},
+        phoenix::LabelId{35});
     const bool ok = profile && profile->size() == 2 && profile->sign() == CGAL::POSITIVE
         && direction.first == 0.0 && direction.second == 3.0
         && profile->segment(0).horizontal
@@ -31,7 +39,9 @@ int main()
         && input && input->boundary.size() == 3
         && input->boundary[0].source_vertex_id == phoenix::VertexId{1}
         && input->boundary[0].source_edge_id == phoenix::EdgeId{7}
-        && input->boundary[0].cap_label == phoenix::LabelId{35};
+        && input->boundary[0].cap_label == phoenix::LabelId{35}
+        && horizontal_only && horizontal_only->sign() == CGAL::POSITIVE
+        && horizontal_input && horizontal_input->sign == CGAL::POSITIVE;
     if (!ok) {
         std::cerr << "extrusion profile tests failed\n";
         return EXIT_FAILURE;

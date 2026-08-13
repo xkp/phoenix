@@ -961,29 +961,83 @@ Exit gate:
 
 ## Phase P10: Port Inset
 
+Implementation decision: use the same minimal-change philosophy as partition.
+First establish the production inset source, inputs, outputs, labels, precision,
+failure behavior, and fixtures as the compatibility oracle. Do not redesign the
+operation while discovering its boundary.
+
+The intended Phoenix implementation is reuse of the extrusion implementation,
+because production inset and extrusion are understood to perform equivalent
+geometric work under different instruction configuration. This is a planned
+kernel consolidation, not permission to approximate inset behavior. Production
+inset remains the oracle until fixtures prove the extrusion-backed path matches
+its topology, orientation, distances, labels, degenerate handling, failures,
+and face-consumption behavior. Any behavior that cannot be expressed through
+the extrusion kernel must remain in a narrow inset-specific adapter or retain
+the corresponding production code.
+
+P10 oracle checkpoint: the active production kernel and its face-cleanup helper
+are localized and compiled in `phoenix_inset_production_oracle`. The first
+deterministic exact fixture covers a labeled convex rectangle and verifies one
+center face, four side faces, and result/side face-label separation. The source
+hashes, excluded command/debug dependencies, cleanup tolerances, directed label
+roles, and preliminary extrusion-reuse constraint are recorded in
+`PORTING_INSET_SOURCE_MAP.md`.
+The first runtime boundary is complete: `inset/production_adapter.{hpp,cpp}`
+accepts only a canonical 3D face reference, scalar amount, labels, and the
+run-scoped ID allocator. Projection to the exact arrangement and all CGAL
+handles are invocation-local; the result is lifted immediately into canonical
+3D `double` geometry. The fixture verifies a tilted plane, center/side topology,
+directed labels, success-only consumption, and failure preservation. The inset
+instruction handler fans out canonical faces and emits only canonical 3D
+geometry collections and publication effects. The handler now also passes
+through `FunctionExecutor` and the publication ledger: a successful inset
+replaces the source face on its owning actor with five generated faces. This
+executor fixture intentionally uses the actor derived from the call path so
+source ownership, consumption, and replacement remain in one publication
+scope.
+The compatibility corpus now also covers a tilted concave L-face, production's
+default face and directed-edge label inheritance, instruction-cache replay with
+a single kernel invocation, and partial-rerun replacement. The partial-rerun
+fixture verifies both cached reproduction of the inset and restoration of the
+original source face when a changed kernel version fails. The existing platform
+workflow discovers and executes both inset test binaries through its
+`phoenix_*_tests` sweep on Linux and Apple Silicon debug/release builds.
+
 Goal:
 
-- port inset while respecting its instruction-specific precision and topology
-  behavior
+- preserve production inset behavior while implementing the accepted operation
+  through the shared extrusion kernel wherever equivalence is demonstrated
 
 Tasks:
 
 - repeat the trusted-boundary and production-oracle audit
-- retain inset's existing kernel choice unless an approved compatibility change
-  is required
+- move the production inset code and its required support with only the minimum
+  compatibility edits needed to compile as a local oracle
+- map inset parameters, axes, winding, labels, and result roles onto extrusion
+  inputs explicitly
+- build differential fixtures that execute production inset and the proposed
+  extrusion-backed implementation on identical inputs
+- reuse the extrusion kernel only for fixture-proven equivalent behavior
+- retain a narrow inset-specific compatibility path for any non-equivalent case
 - implement the Phoenix adapter and consuming handler
 - validate generated topology, labels, repair, failures, and actor publication
 - add inset-specific production, cache, partial-rerun, and platform fixtures
 
 Deliverables:
 
-- preserved inset kernel
+- localized production inset oracle and source/diff manifest
+- documented inset-to-extrusion parameter and result-role mapping
+- extrusion-backed inset kernel with any required narrow compatibility adapter
 - Phoenix inset handler and adapter
 - inset golden fixtures and compatibility report
 
 Exit gate:
 
 - inset meets the established kernel-port acceptance contract
+- production-oracle fixtures demonstrate equivalence of the extrusion-backed
+  implementation for every supported inset mode
+- no production inset behavior is silently dropped merely to force kernel reuse
 
 ## Phase P11: Expand The Kernel And Instruction Inventory
 
