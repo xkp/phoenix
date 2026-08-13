@@ -1177,6 +1177,17 @@ consume nothing. The loader-advertised `byFace` mode remains rejected because
 the active production runtime asserts rather than implements it. Linux and
 Apple Silicon CI cover the port. No 2D geometry, materials, styles, persistence
 format, or mutable model copies enter the runtime; migration remains P12 work.
+
+### P11 non-scripted if checkpoint
+
+The production variable-truthiness boundary is implemented and recorded in
+`PORTING_IF_SOURCE_MAP.md`. Phoenix routes an input value unchanged through
+`then` or `else` from an explicit typed condition input. Boolean and nonzero
+integer/floating-point truthiness match production behavior; missing or
+unsupported condition types fail without publishing. This instruction is
+non-consuming. Named production VM variables will become graph connections
+during P12 migration. Expression-mode `if` and ordered `case` remain gated on
+the P11 scripting contract; no V8 or source evaluator enters this slice.
 7. project migration, exporters, and post-port work
 
 ## Phase P12: Migrate Existing Projects

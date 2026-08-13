@@ -49,7 +49,8 @@ deprecated `share` instruction is excluded from both queues.
 
 ### Control-flow recovery order
 
-1. Document port routing and truthiness for non-scripted `if`.
+1. Document and implement port routing and truthiness for non-scripted `if`.
+   Complete; see `PORTING_IF_SOURCE_MAP.md`.
 2. Implement bounded loop execution as a special runtime construct, not as a
    general graph cycle.
 3. Preserve loop feedback through the body `loop` output, accumulation from
