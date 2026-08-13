@@ -1068,6 +1068,18 @@ conditions, owning-face label inheritance, and global fallbacks create an
 immutable canonical copy while preserving every element ID. Expression and
 binding-dependent relation modes remain gated on scripting. Smooth and
 non-scripted instancing are the next core slices.
+Smooth S0-S3 subdivision integration is now defined in
+`PORTING_SMOOTH_SOURCE_MAP.md`. Subdivision and hard-edge rounding are separate
+preserved production modes. Phoenix declares OpenSubdiv directly. Canonical 3D
+topology now passes through OpenSubdiv uniform refinement, refined faces inherit
+their coarse ancestor's stable label, generated topology receives run-scoped
+IDs, and directed-edge labels remain unassigned exactly where production's
+face-varying propagation is disabled. Transactional instruction publication,
+cache replay, partial-rerun restoration, and the Linux/Apple platform matrix
+are covered. Persisted option migration remains in P12, while production's
+optional preprocessing flags require fixtures before exposure. Hard-edge
+rounding follows against the accepted merge helpers and an immutable
+label-metadata view.
 
 Goal:
 

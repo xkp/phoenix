@@ -1,0 +1,47 @@
+name: Smooth platforms
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "vcpkg.json"
+      - "include/phoenix/smooth/**"
+      - "src/smooth/**"
+      - "tests/smooth_*"
+      - ".github/workflows/smooth-platforms.yml"
+  pull_request:
+
+jobs:
+  gcc:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        preset: [linux-debug, linux-release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenSubdiv Linux prerequisites
+        run: sudo apt-get update && sudo apt-get install -y libxinerama-dev libxxf86vm-dev
+      - uses: lukka/run-vcpkg@v11
+      - uses: lukka/run-cmake@v10
+        with:
+          configurePreset: ${{ matrix.preset }}
+          buildPreset: build-${{ matrix.preset }}
+      - run: build/${{ matrix.preset }}/phoenix_smooth_subdivision_tests
+      - run: build/${{ matrix.preset }}/phoenix_smooth_instruction_tests
+
+  apple-silicon:
+    runs-on: macos-14
+    strategy:
+      matrix:
+        preset: [macos-apple-silicon-debug, macos-apple-silicon-release]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/run-vcpkg@v11
+      - uses: lukka/run-cmake@v10
+        with:
+          configurePreset: ${{ matrix.preset }}
+          buildPreset: build-${{ matrix.preset }}
+      - run: build/${{ matrix.preset }}/phoenix_smooth_subdivision_tests
+      - run: build/${{ matrix.preset }}/phoenix_smooth_instruction_tests

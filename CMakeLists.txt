@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(CGAL REQUIRED)
+find_package(OpenSubdiv CONFIG REQUIRED)
 
 add_executable(phoenix_cgal_app
     src/cache.cpp
@@ -219,6 +220,64 @@ if(MSVC)
     target_compile_options(phoenix_rename_instruction_tests PRIVATE /W4 /permissive-)
 else()
     target_compile_options(phoenix_rename_instruction_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_smooth_subdivision_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/working_geometry.cpp
+    src/working_geometry_builder.cpp
+    src/smooth/subdivision.cpp
+    tests/smooth_subdivision_tests.cpp
+)
+target_include_directories(phoenix_smooth_subdivision_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_smooth_subdivision_tests PRIVATE
+    CGAL::CGAL OpenSubdiv::osdCPU_static
+)
+if(MSVC)
+    target_compile_definitions(phoenix_smooth_subdivision_tests PRIVATE _USE_MATH_DEFINES)
+endif()
+
+add_executable(phoenix_smooth_instruction_tests
+    src/cache.cpp
+    src/execution.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/invalidation.cpp
+    src/labels.cpp
+    src/partial_run.cpp
+    src/partial_run_apply.cpp
+    src/partial_run_scope.cpp
+    src/publication.cpp
+    src/randomness.cpp
+    src/scene_update.cpp
+    src/values.cpp
+    src/working_geometry.cpp
+    src/working_geometry_builder.cpp
+    src/smooth/subdivision.cpp
+    src/smooth/instruction.cpp
+    tests/smooth_instruction_tests.cpp
+)
+target_include_directories(phoenix_smooth_instruction_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_smooth_instruction_tests PRIVATE
+    CGAL::CGAL OpenSubdiv::osdCPU_static
+)
+if(MSVC)
+    target_compile_definitions(phoenix_smooth_instruction_tests PRIVATE _USE_MATH_DEFINES)
+    target_compile_options(phoenix_smooth_instruction_tests PRIVATE /W4 /permissive- /bigobj)
+else()
+    target_compile_options(phoenix_smooth_instruction_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+if(MSVC)
+    target_compile_options(phoenix_smooth_subdivision_tests PRIVATE /W4 /permissive- /bigobj)
+else()
+    target_compile_options(phoenix_smooth_subdivision_tests PRIVATE
         -Wall -Wextra -Wpedantic)
 endif()
 
