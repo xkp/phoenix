@@ -9,6 +9,43 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(CGAL REQUIRED)
 find_package(OpenSubdiv CONFIG REQUIRED)
 
+add_executable(phoenix_instance_placement_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/instance/placement.cpp
+    tests/instance_placement_tests.cpp
+)
+target_include_directories(phoenix_instance_placement_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_instance_placement_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_instance_placement_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_instance_instruction_tests
+    src/cache.cpp
+    src/execution.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/publication.cpp
+    src/randomness.cpp
+    src/values.cpp
+    src/instance/placement.cpp
+    src/instance/instruction.cpp
+    tests/instance_instruction_tests.cpp
+)
+target_include_directories(phoenix_instance_instruction_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_instance_instruction_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_instance_instruction_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(phoenix_loop_runtime_tests
     src/randomness.cpp
     src/values.cpp

@@ -29,6 +29,7 @@ struct GeometryItemEffect {
     CanonicalGeometryRef generated_geometry;
     std::vector<SourceFaceIdentity> consumed_faces;
     std::string failure_message;
+    bool allows_empty_replacement = false;
 };
 
 struct PublicationScopeKey {

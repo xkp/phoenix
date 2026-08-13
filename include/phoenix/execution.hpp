@@ -89,6 +89,7 @@ struct InstructionResult {
     std::optional<std::string> failure_message;
     std::vector<InstructionFailure> failures;
     std::vector<GeometryItemEffect> geometry_effects;
+    std::vector<ActorNode> actor_children;
 };
 
 struct InstructionExecutionFrame {

@@ -1162,6 +1162,21 @@ their zero-based iteration, and trace/work budgets cover nested execution.
 Linux and Apple Silicon CI run all loop suites. Loop migration participates later in the
 general P12 persistence design without prescribing JSON or binary as Phoenix's
 format. Expression-updated variables wait for scripting.
+
+### P11 instance checkpoint
+
+Instance I0-I4 are complete and recorded in `PORTING_INSTANCE_SOURCE_MAP.md`.
+The canonical 3D placement planner preserves per-face centroid/bounding-box
+origins, first matching directed orientation-label edge, face-normal alignment,
+local-axis translation, scale, and production's observed extra-rotation gate.
+The handler emits cacheable actor children referencing immutable external
+prototype identities, supports deterministic ranged/stepped transforms and
+shared/per-face seeds, and transactionally consumes inputs only for
+`removeInput`. Missing orientation labels and degenerate faces publish and
+consume nothing. The loader-advertised `byFace` mode remains rejected because
+the active production runtime asserts rather than implements it. Linux and
+Apple Silicon CI cover the port. No 2D geometry, materials, styles, persistence
+format, or mutable model copies enter the runtime; migration remains P12 work.
 7. project migration, exporters, and post-port work
 
 ## Phase P12: Migrate Existing Projects

@@ -148,7 +148,7 @@ PublicationCommitResult GeometryPublicationLedger::replace_scope(
             }
         }
         if (instruction_consumes_geometry && effect.generated_geometry == nullptr
-            && !effect.consumed_faces.empty()) {
+            && !effect.consumed_faces.empty() && !effect.allows_empty_replacement) {
             result.diagnostics.push_back(PublicationDiagnostic{
                 PublicationDiagnosticCode::consuming_success_without_replacement,
                 "Consuming item succeeded without replacement geometry.", effect.item_key});

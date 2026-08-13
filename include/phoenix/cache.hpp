@@ -81,6 +81,7 @@ struct InstructionCacheEntry {
     CacheKey key;
     std::vector<PortValue> outputs;
     std::vector<GeometryItemEffect> geometry_effects;
+    std::vector<ActorNode> actor_children;
 };
 
 struct FunctionCallCacheEntry {

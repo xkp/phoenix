@@ -820,7 +820,8 @@ void publish_instruction_cache_entry(
     NodeId node_id,
     std::optional<SeedValue> effective_seed,
     const std::vector<PortValue>& outputs,
-    const std::vector<GeometryItemEffect>& geometry_effects)
+    const std::vector<GeometryItemEffect>& geometry_effects,
+    const std::vector<ActorNode>& actor_children)
 {
     if (cache_writer == nullptr) {
         return;
@@ -836,6 +837,7 @@ void publish_instruction_cache_entry(
     entry.key = key_builder.instruction_outputs(key_input);
     entry.outputs = outputs;
     entry.geometry_effects = geometry_effects;
+    entry.actor_children = actor_children;
     cache_writer->put_instruction(std::move(entry));
 }
 
@@ -1130,7 +1132,8 @@ InstructionPublicationResult publish_instruction_execution(
             input.node_id,
             input.effective_seed,
             instruction_result.produced_outputs,
-            instruction_result.geometry_effects);
+            instruction_result.geometry_effects,
+            instruction_result.actor_children);
     }
 
     if (!instruction_result.failures.empty()) {
@@ -1195,6 +1198,8 @@ InstructionWorkResult execute_instruction_work(const InstructionWorkInput& input
             result.instruction_result.node_id = node_id;
             result.instruction_result.produced_outputs = cached_result->outputs;
             result.instruction_result.geometry_effects = cached_result->geometry_effects;
+            result.actor_children = cached_result->actor_children;
+            result.instruction_result.actor_children = cached_result->actor_children;
             return result;
         }
     }
@@ -1353,6 +1358,7 @@ InstructionWorkResult execute_instruction_work(const InstructionWorkInput& input
     }
 
     result.instruction_result = (*handler)(frame);
+    result.actor_children = result.instruction_result.actor_children;
     return result;
 }
 
