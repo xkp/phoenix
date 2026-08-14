@@ -202,7 +202,7 @@ ScriptResult QuickJsEngine::execute_script(const ScriptRequest& request,
     const auto stack=std::max<std::uint64_t>(64U<<10U,std::min<std::uint64_t>(request.limits.memory_bytes/4,static_cast<std::uint64_t>(request.limits.recursion_depth)*(16U<<10U)));JS_SetMaxStackSize(runtime.get(),static_cast<std::size_t>(stack));
     InterruptState state{cancellation,std::max<std::uint64_t>(1,request.limits.instruction_budget/1024),false,false};JS_SetInterruptHandler(runtime.get(),interrupt,&state);
     Context context{JS_NewContext(runtime.get())};if(!context)return script_failure(EvaluationStatus::budget_exceeded,DiagnosticCode::memory_budget_exceeded,"QuickJS context exceeded the memory budget.");
-    ScriptContextState context_state{&transaction};JS_SetContextOpaque(context.get(),&context_state);
+    ScriptContextState context_state{&transaction,{}};JS_SetContextOpaque(context.get(),&context_state);
     auto td=JS_NewObject(context.get()),vars=JS_NewObject(context.get()),labels=JS_NewObject(context.get()),inputs=JS_NewObject(context.get());
     bool object_error=JS_IsException(td)||JS_IsException(vars)||JS_IsException(labels)||JS_IsException(inputs);
     for(const auto& binding:validated.effective_bindings)object_error=object_error||!set(context.get(),vars,binding.first,to_js(context.get(),binding.second));

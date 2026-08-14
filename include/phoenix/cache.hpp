@@ -104,7 +104,7 @@ struct ActorPrototypeCacheEntry {
 
 class CacheStore {
 public:
-    [[nodiscard]] virtual ~CacheStore() = default;
+    virtual ~CacheStore() = default;
 
     [[nodiscard]] virtual std::optional<InstructionCacheEntry> find_instruction(
         const CacheKey& key) const = 0;

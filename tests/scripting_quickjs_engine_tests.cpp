@@ -90,7 +90,7 @@ bool executes_ordered_script_and_finalizes_outputs()
     ScriptRequest request;
     request.bindings = {{"offset",std::int64_t{4}}};
     request.labels = {{"wall",LabelId{70}}};
-    request.geometry_inputs = {{"in",triangle(),"actor"}};
+    request.geometry_inputs = {{"in",triangle(),"actor",{}, {}}};
     request.libraries = {
         {"first",1,1,"globalThis.libraryValue = 2;"},
         {"second",1,2,"globalThis.libraryValue *= 3;"},
@@ -141,7 +141,7 @@ bool mutates_and_publishes_geometry()
     using namespace phoenix::scripting;
     QuickJsEngine engine;
     ScriptRequest request;
-    request.geometry_inputs={{"in",triangle(),"actor"}};
+    request.geometry_inputs={{"in",triangle(),"actor",{}, {}}};
     request.program.source=
         "const mesh=td.cloneGeometry('in','mesh');"
         "td.setVertex(mesh,0,2,3,4);"

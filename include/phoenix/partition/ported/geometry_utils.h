@@ -556,7 +556,7 @@ struct geometry_utils
   static bool colinear(edge3 he, edge3 he1, double tolerance = 1e-3)
   {
 	  double ts = tolerance*tolerance;
-	  geometry::line3 l(he->opposite()->vertex()->point(), he->vertex()->point());
+	  line3 l(he->opposite()->vertex()->point(), he->vertex()->point());
 	  if (l.is_degenerate())
 	  {
 		  l = line3(he1->opposite()->vertex()->point(), he1->vertex()->point());
@@ -765,11 +765,11 @@ static void make_double(A& arr_)
 {
 	//CGAL::Cartesian_converter<geometry::Kernel, DoubleKernel> exact_to_double;
 	//CGAL::Cartesian_converter<DoubleKernel, geometry::Kernel> double_to_exact;
-	arrangement2 arr;
+	A arr;
 
-	std::map<arrangement2::Vertex_iterator, arrangement2::Vertex_iterator> vertex_map;
+	std::map<typename A::Vertex_iterator, typename A::Vertex_iterator> vertex_map;
 	// round vertex points to double
-	arrangement2::Vertex_iterator vit;
+	typename A::Vertex_iterator vit;
 	CGAL_forall_vertices(vit, arr_)
 	{
 		point2 p(CGAL::to_double(vit->point().x()), CGAL::to_double(vit->point().y()));
@@ -1319,4 +1319,3 @@ struct io_utils {};
 
 #define DECLARE_UTILS3(K, P) typedef geometry_utils<K, typename cgal2_arrangement<K, int, int, int>::arrangement, P> geom_utils;
 #define CGAL_UTILS3(K, P) typedef geometry_utils<K, typename cgal2_arrangement<K, int, int, int>::arrangement, P> geom_utils;
-
