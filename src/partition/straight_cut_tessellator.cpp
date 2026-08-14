@@ -1,6 +1,6 @@
 #include "phoenix/partition/straight_cut_tessellator.hpp"
 
-#include <CGAL/Arr_observer.h>
+#include <CGAL/Aos_observer.h>
 
 namespace phoenix::partition::adapted {
 namespace {

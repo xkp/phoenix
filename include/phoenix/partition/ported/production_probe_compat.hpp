@@ -3,7 +3,7 @@
 // Forced into the read-only production translation units by the compatibility
 // probe. CGAL 6.2 no longer provides this declaration through the transitive
 // include graph used by the production precompiled header.
-#include <CGAL/Arr_observer.h>
+#include <CGAL/Aos_observer.h>
 
 #include <boost/variant/get.hpp>
 #include <boost/variant.hpp>

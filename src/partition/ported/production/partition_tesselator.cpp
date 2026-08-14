@@ -132,14 +132,14 @@ void partition_tesselator::apply_labels(geometry::edge2 he_north, point2 pt_sout
 
 const int TAG_FACE_ADDED = 1;
 
-class face_observer : public CGAL::Arr_observer<geometry::arrangement2>
+class face_observer : public CGAL::Aos_observer<geometry::arrangement2>
 {
 	face2_list& _faces;
 	//std::set<face2> added_faces;
 
 public:
 	face_observer(geometry::arrangement2& arr, face2_list& faces) :
-		CGAL::Arr_observer<geometry::arrangement2>(arr),
+		CGAL::Aos_observer<geometry::arrangement2>(arr),
 		_faces(faces)
 	{
 	}
@@ -153,7 +153,7 @@ public:
 		}
 	}
 
-	virtual void after_split_face(Face_handle f1, Face_handle f2, bool is_hole)
+	void after_split_face(Face_handle f1, Face_handle f2, bool is_hole) override
 	{
 		add_face(f2);
 	}
@@ -1209,7 +1209,7 @@ edge2_list partition_tesselator::insert_bezier(curves_original_seg_t& curves_seg
 		bool point_in_unbounded = false;
 		for (it = results.begin(); !point_outside && it != results.end(); ++it)
 		{
-			if (const const_face2* f2 = boost::get<const_face2>(&(it->second)))       // inside a face
+			if (const const_face2* f2 = std::get_if<const_face2>(&(it->second)))       // inside a face
 			{
 				if (*f2 != f)
 				{
@@ -1218,12 +1218,12 @@ edge2_list partition_tesselator::insert_bezier(curves_original_seg_t& curves_seg
 					//std::cout << "outside " << (*f2)->data().label << "\n";
 				}
 			}
-			else if (const const_edge2* e = boost::get<const_edge2>(&(it->second))) // on an edge
+			else if (const const_edge2* e = std::get_if<const_edge2>(&(it->second))) // on an edge
 			{
 				point_outside = true;
 				//std::cout << "point on edge\n";
 			}
-			else if (const const_vertex2* v = boost::get<const_vertex2>(&(it->second)))  // on a vertex
+			else if (const const_vertex2* v = std::get_if<const_vertex2>(&(it->second)))  // on a vertex
 			{
 				point_outside = true;
 				//std::cout << "point on vertex\n";

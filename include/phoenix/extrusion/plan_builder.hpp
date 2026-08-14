@@ -1,7 +1,7 @@
 #pragma once
 
 #include <CGAL/Arr_extended_dcel.h>
-#include <CGAL/Arr_observer.h>
+#include <CGAL/Aos_observer.h>
 #include <CGAL/Arr_segment_traits_2.h>
 #include <CGAL/Arrangement_2.h>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
@@ -33,7 +33,7 @@ public:
     [[nodiscard]] const CollisionMap& collisions() const noexcept { return collisions_; }
 
 private:
-    class Observer final : public CGAL::Arr_observer<Arrangement> {
+    class Observer final : public CGAL::Aos_observer<Arrangement> {
     public:
         explicit Observer(Arrangement& arrangement);
         void clear_collision();

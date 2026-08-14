@@ -5,7 +5,7 @@
 #include "phoenix/partition/working_face.hpp"
 #include "phoenix/working_geometry_builder.hpp"
 
-#include <CGAL/Arr_observer.h>
+#include <CGAL/Aos_observer.h>
 
 #include <map>
 #include <memory>

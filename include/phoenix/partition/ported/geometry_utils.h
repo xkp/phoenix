@@ -1,6 +1,7 @@
 #pragma once
 
 #include <CGAL/Straight_skeleton_2.h>
+#include <CGAL/Aos_observer.h>
 
 #include "phoenix/partition/ported/geometry_constants.h"
 #include "phoenix/partition/ported/geometry_types.h"
@@ -797,13 +798,13 @@ static void make_double(A& arr_)
 
 static edge2_list insert(A& arr, segment2 seg)
 {
-	class observer : public CGAL::Arr_observer<A>
+	class observer : public CGAL::Aos_observer<A>
 	{
 		edge2_list _edges;
 
 	public:
 		observer(A& arr) :
-			CGAL::Arr_observer<A>(arr),
+			CGAL::Aos_observer<A>(arr),
 			_edges()
 		{
 		}
@@ -813,7 +814,7 @@ static edge2_list insert(A& arr, segment2 seg)
 			return _edges;
 		}
 
-		virtual void after_create_edge(typename A::Halfedge_handle e)
+		void after_create_edge(typename A::Halfedge_handle e) override
 		{
 			_edges.push_back(e);
 		}

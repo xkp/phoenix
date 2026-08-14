@@ -8,6 +8,8 @@
 
 #include <CGAL/squared_distance_3.h>
 
+#include <variant>
+
 
 template<typename K>
 struct bezier_evaluator
@@ -144,14 +146,14 @@ boost::optional<Point2> intersect_cs(const Point2& center, double radius2, const
 	boost::optional<Point2> result;
 	if (res.size() == 1)
 	{
-		const res_entry* foo = boost::get<res_entry>(&res[0]);
+		const res_entry* foo = std::get_if<res_entry>(&res[0]);
 		if (foo)
 			result = Point2(CGAL::to_double(foo->first.x()), CGAL::to_double(foo->first.y()));
 	}
 	else if (res.size() == 2)
 	{
-		const res_entry* foo1 = boost::get<res_entry>(&res[0]);
-		const res_entry* foo2 = boost::get<res_entry>(&res[1]);
+		const res_entry* foo1 = std::get_if<res_entry>(&res[0]);
+		const res_entry* foo2 = std::get_if<res_entry>(&res[1]);
 		if (foo1 && foo2)
 		{
 			auto pp1 = Point2(CGAL::to_double(foo1->first.x()), CGAL::to_double(foo1->first.y()));
