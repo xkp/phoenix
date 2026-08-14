@@ -1344,16 +1344,42 @@ the active production runtime asserts rather than implements it. Linux and
 Apple Silicon CI cover the port. No 2D geometry, materials, styles, persistence
 format, or mutable model copies enter the runtime; migration remains P12 work.
 
-### P11 non-scripted if checkpoint
+### P11 if/expression checkpoint
 
 The production variable-truthiness boundary is implemented and recorded in
 `PORTING_IF_SOURCE_MAP.md`. Phoenix routes an input value unchanged through
 `then` or `else` from an explicit typed condition input. Boolean and nonzero
 integer/floating-point truthiness match production behavior; missing or
 unsupported condition types fail without publishing. This instruction is
-non-consuming. Named production VM variables will become graph connections
-during P12 migration. Expression-mode `if` and ordered `case` remain gated on
-the P11 scripting contract; no V8 or source evaluator enters this slice.
+non-consuming. Expression-mode `if` now evaluates through the restricted
+scalar `ExpressionSpec` boundary over the sandboxed QuickJS-NG engine. Scalar
+graph inputs become local bindings, configured globals are read-only, local
+bindings shadow globals, geometry/script host APIs are absent, limits and the
+deterministic seed are forwarded, diagnostics are stable, and the engine/
+version/source/global-binding contract produces a persistent configuration
+revision. Named production VM variables become graph connections during P12
+migration. Ordered `case` is now implemented over the same expression boundary:
+branches evaluate in persisted order, the first truthy result receives the
+original value, and `else` receives it only when no branch matches. Empty or
+duplicate branch ports and expression failures publish nothing. Branch order,
+output names, expression contracts, and engine identity participate in the
+instruction configuration revision.
+
+The shared production-compatible 3D geometry-binding layer is now connected to both `if` and
+`case`. It evaluates configured variables independently for each canonical face
+or directed halfedge and publishes routed `ElementSelectionValue` objects using
+the original stable IDs and owning geometry snapshot. Whole geometry and
+matching pre-existing selections are accepted; every selection ID must resolve
+or evaluation fails. Implemented derived values are face area, labeled edge
+length (`any`/largest/shortest), border-edge presence, edge-label count,
+geometry-wide face-label count, opposite-edge match, previous/next adjacency,
+angle, production endpoint-pair distance (`any`/largest/shortest), and the
+specialized four-label extended-opposite predicate. Geometry collections are
+expanded contribution-by-contribution without merging ownership, and every
+binding option participates in `if` and `case` configuration identity. The
+production `any` choices use the deterministic execution seed. No 2D resolver
+is included. The known production 3D resolver inventory is complete; persisted
+project binding migration and real-project differential fixtures remain P12 work.
 7. project migration, exporters, and post-port work
 
 ## Phase P12: Migrate Existing Projects

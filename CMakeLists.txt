@@ -167,9 +167,16 @@ add_executable(phoenix_if_instruction_tests
     src/labels.cpp
     src/publication.cpp
     src/randomness.cpp
+    src/scripting/contract.cpp
+    src/scripting/expression.cpp
+    src/scripting/geometry_bindings.cpp
+    src/scripting/intersections3.cpp
+    src/scripting/primitives3.cpp
+    src/scripting/quickjs_engine.cpp
     src/values.cpp
     tests/if_instruction_tests.cpp
 )
+target_link_libraries(phoenix_if_instruction_tests PRIVATE qjs CGAL::CGAL)
 target_include_directories(phoenix_if_instruction_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
@@ -177,6 +184,51 @@ if(MSVC)
     target_compile_options(phoenix_if_instruction_tests PRIVATE /W4 /permissive-)
 else()
     target_compile_options(phoenix_if_instruction_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_case_instruction_tests
+    src/cache.cpp
+    src/control/case_instruction.cpp
+    src/control/if_instruction.cpp
+    src/execution.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/publication.cpp
+    src/randomness.cpp
+    src/scripting/contract.cpp
+    src/scripting/expression.cpp
+    src/scripting/geometry_bindings.cpp
+    src/scripting/intersections3.cpp
+    src/scripting/primitives3.cpp
+    src/scripting/quickjs_engine.cpp
+    src/values.cpp
+    tests/case_instruction_tests.cpp
+)
+target_include_directories(phoenix_case_instruction_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_case_instruction_tests PRIVATE qjs CGAL::CGAL)
+if(MSVC)
+    target_compile_options(phoenix_case_instruction_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_case_instruction_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_geometry_bindings_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/scripting/geometry_bindings.cpp
+    src/values.cpp
+    tests/geometry_bindings_tests.cpp
+)
+target_include_directories(phoenix_geometry_bindings_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_geometry_bindings_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_geometry_bindings_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 add_executable(phoenix_instance_placement_tests

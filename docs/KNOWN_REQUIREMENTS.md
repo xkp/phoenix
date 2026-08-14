@@ -552,3 +552,18 @@ still open.
   production corpus port; their legacy label-transfer semantics require
   differential validation before adoption.
 - Script includes are immutable resolved assets, not filesystem access.
+
+### Scalar expressions
+
+- Expressions reuse the sandboxed engine but expose only immutable scalar
+  globals and instruction-local scalar bindings; geometry and script host APIs
+  are unavailable.
+- Expression source, language version, engine identity/version, configured
+  globals, limits, and deterministic seed participate in evaluation identity.
+- Expression diagnostics and budget/cancellation failures prevent the
+  consuming instruction from publishing output.
+- `case` expressions evaluate in persisted order and route through only the
+  first truthy branch; `else` is used only when no branch matches.
+- Geometry-derived expression bindings evaluate per canonical face or directed
+  halfedge and route stable-ID selections backed by the original geometry.
+  Missing selection IDs fail rather than being silently discarded.
