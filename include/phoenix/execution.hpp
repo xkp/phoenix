@@ -47,6 +47,7 @@ struct ExecutionContext {
     FunctionId function_id;
     FunctionCallPath call_path;
     SeedValue global_seed = 0;
+    std::int32_t lod = 1;
 };
 
 struct CallFrame {

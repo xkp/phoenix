@@ -1325,9 +1325,15 @@ complete success; failure exposes and consumes nothing. The collapsed outer
 instruction is cacheable, loop options/body identity participate in the graph
 revision, full partial-rerun replay/restoration is covered, failures identify
 their zero-based iteration, and trace/work budgets cover nested execution.
-Linux and Apple Silicon CI run all loop suites. Loop migration participates later in the
-general P12 persistence design without prescribing JSON or binary as Phoenix's
-format. Expression-updated variables wait for scripting.
+Loop variables now provide typed initial values to the first body invocation,
+evaluate every update against one immutable parent/previous-value snapshot plus
+the next zero-based `_index`, and commit the complete next variable set
+atomically. `$index` and named variables enter the body as typed ports; invalid,
+duplicate, or reserved names and expression failures abort the transaction.
+Initial values, parent bindings, update expressions, limits, and engine identity
+participate in the loop configuration revision. Linux and Apple Silicon CI run
+all loop suites. Loop migration participates later in the general P12
+persistence design without prescribing JSON or binary as Phoenix's format.
 
 ### P11 instance checkpoint
 
@@ -1380,6 +1386,14 @@ binding option participates in `if` and `case` configuration identity. The
 production `any` choices use the deterministic execution seed. No 2D resolver
 is included. The known production 3D resolver inventory is complete; persisted
 project binding migration and real-project differential fixtures remain P12 work.
+
+Loop expression variables, `choice`, and LOD complete the remaining P11
+control-instruction runtime. Loop variables use atomic snapshot-based updates
+and typed body ports. Choice preserves explicit configuration selection and
+deterministic seeded fallback without importing production config-file state.
+LOD preserves production's requested-level-or-lower-connected-level routing;
+the active LOD is part of execution cache identity. Published choice metadata
+and production persisted descriptors remain P12 migration concerns.
 7. project migration, exporters, and post-port work
 
 ## Phase P12: Migrate Existing Projects

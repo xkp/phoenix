@@ -27,10 +27,10 @@ bool valid_name(const std::string& name) noexcept
 {
     if (name.empty()) return false;
     const auto first = static_cast<unsigned char>(name.front());
-    if (!(std::isalpha(first) || first == '_')) return false;
+    if (!(std::isalpha(first) || first == '_' || first == '$')) return false;
     for (const auto character : name) {
         const auto value = static_cast<unsigned char>(character);
-        if (!(std::isalnum(value) || value == '_')) return false;
+        if (!(std::isalnum(value) || value == '_' || value == '$')) return false;
     }
     return true;
 }

@@ -562,8 +562,19 @@ still open.
   globals, limits, and deterministic seed participate in evaluation identity.
 - Expression diagnostics and budget/cancellation failures prevent the
   consuming instruction from publishing output.
+- `$index` is a zero-based typed loop-body binding. Loop update expressions use
+  `_index` for the next iteration and read an immutable snapshot of parent and
+  previous-iteration variables; all updates commit atomically or none do.
+- Loop variable names, initial values, update expression contracts, parent
+  bindings, and engine identity participate in instruction cache identity.
 - `case` expressions evaluate in persisted order and route through only the
   first truthy branch; `else` is used only when no branch matches.
 - Geometry-derived expression bindings evaluate per canonical face or directed
   halfedge and route stable-ID selections backed by the original geometry.
   Missing selection IDs fail rather than being silently discarded.
+- `choice` routes its input unchanged to an explicitly configured output or a
+  deterministic seeded alternative. Item order and all published-choice
+  metadata participate in configuration identity.
+- `lod` routes its input unchanged to the requested low/normal/high output, or
+  walks downward to the nearest connected level. LOD participates in execution
+  and cache identity; no upward fallback occurs.

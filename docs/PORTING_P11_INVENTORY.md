@@ -47,6 +47,11 @@ be ported before expression evaluation. `case`, expression-mode `if`, and loop
 variable update expressions remain blocked on the scripting contract. The
 deprecated `share` instruction is excluded from both queues.
 
+Runtime status: the bounded loop including expression-updated variables,
+expression-mode `if`, ordered `case`, deterministic `choice`, and downward-
+fallback LOD routing are implemented. Production loader/config-file translation
+for these handlers remains P12 work.
+
 ### Control-flow recovery order
 
 1. Document and implement port routing and truthiness for non-scripted `if`.

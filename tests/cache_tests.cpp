@@ -101,6 +101,17 @@ bool test_function_key_changes_with_seed()
         != builder.function_call(second_input).stable_key;
 }
 
+bool test_function_key_changes_with_lod()
+{
+    phoenix::FunctionCallCacheKeyInput first_input;
+    first_input.identity = base_identity();
+    auto second_input = first_input;
+    second_input.identity.lod = 2;
+    const phoenix::CacheKeyBuilder builder;
+    return builder.function_call(first_input).stable_key
+        != builder.function_call(second_input).stable_key;
+}
+
 bool test_function_key_changes_with_input_fingerprint()
 {
     phoenix::FunctionCallCacheKeyInput first_input;
@@ -572,6 +583,7 @@ int main()
     ok = run_test("instruction key changes with node id", test_instruction_key_changes_with_node_id) && ok;
     ok = run_test("function key changes with call path", test_function_key_changes_with_call_path) && ok;
     ok = run_test("function key changes with seed", test_function_key_changes_with_seed) && ok;
+    ok = run_test("function key changes with lod", test_function_key_changes_with_lod) && ok;
     ok = run_test("function key changes with input fingerprint", test_function_key_changes_with_input_fingerprint) && ok;
     ok = run_test("actor subtree key changes with actor id", test_actor_subtree_key_changes_with_actor_id) && ok;
     ok = run_test("actor prototype key changes with instance key", test_actor_prototype_key_changes_with_instance_key) && ok;

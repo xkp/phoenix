@@ -186,6 +186,36 @@ else()
     target_compile_options(phoenix_if_instruction_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(phoenix_choice_instruction_tests
+    src/control/choice_instruction.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/values.cpp
+    tests/choice_instruction_tests.cpp
+)
+target_include_directories(phoenix_choice_instruction_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+if(MSVC)
+    target_compile_options(phoenix_choice_instruction_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_choice_instruction_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_lod_instruction_tests
+    src/control/lod_instruction.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/labels.cpp
+    src/values.cpp
+    tests/lod_instruction_tests.cpp
+)
+target_include_directories(phoenix_lod_instruction_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+if(MSVC)
+    target_compile_options(phoenix_lod_instruction_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_lod_instruction_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(phoenix_case_instruction_tests
     src/cache.cpp
     src/control/case_instruction.cpp
@@ -314,11 +344,18 @@ add_executable(phoenix_loop_geometry_transaction_tests
     src/publication.cpp
     src/randomness.cpp
     src/values.cpp
+    src/scripting/contract.cpp
+    src/scripting/expression.cpp
+    src/scripting/intersections3.cpp
+    src/scripting/primitives3.cpp
+    src/scripting/quickjs_engine.cpp
+    src/scripting/variables.cpp
     src/loop/runtime.cpp
     src/loop/function_body.cpp
     src/loop/geometry_transaction.cpp
     tests/loop_geometry_transaction_tests.cpp
 )
+target_link_libraries(phoenix_loop_geometry_transaction_tests PRIVATE qjs CGAL::CGAL)
 target_include_directories(phoenix_loop_geometry_transaction_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
@@ -342,12 +379,19 @@ add_executable(phoenix_loop_instruction_tests
     src/randomness.cpp
     src/scene_update.cpp
     src/values.cpp
+    src/scripting/contract.cpp
+    src/scripting/expression.cpp
+    src/scripting/intersections3.cpp
+    src/scripting/primitives3.cpp
+    src/scripting/quickjs_engine.cpp
+    src/scripting/variables.cpp
     src/loop/runtime.cpp
     src/loop/function_body.cpp
     src/loop/geometry_transaction.cpp
     src/loop/instruction.cpp
     tests/loop_instruction_tests.cpp
 )
+target_link_libraries(phoenix_loop_instruction_tests PRIVATE qjs CGAL::CGAL)
 target_include_directories(phoenix_loop_instruction_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )

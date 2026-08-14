@@ -47,6 +47,7 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
         request.body = std::move(body);
         request.item_key = 0;
         request.trace_sink = config.trace_sink;
+        request.variables = config.variables;
         auto transaction = run_geometry_transaction(request);
         result.geometry_effects.push_back(transaction.publication);
         if (!transaction.loop.success) {
@@ -67,6 +68,15 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
         }
         return result;
     };
+}
+
+std::string configuration_revision(const InstructionConfig& config)
+{
+    auto revision = configuration_revision(config.options,
+        config.body.function ? config.body.function->id : FunctionId{});
+    if (config.variables)
+        revision += '|' + scripting::variable_configuration_revision(*config.variables);
+    return revision;
 }
 
 std::string configuration_revision(const Options& options, const FunctionId& body_function_id)

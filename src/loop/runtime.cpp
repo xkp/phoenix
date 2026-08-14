@@ -69,11 +69,15 @@ RunResult run(const RunRequest& request)
     }
 
     RuntimeValue current = request.input;
+    auto variables = request.initial_variables;
     for (std::size_t index = 0; index < *count; ++index) {
         auto iteration_seed = request.seed;
         iteration_seed.item_key = index + 1;
+        const auto seed = SeedDeriver{}.derive(iteration_seed);
+        auto body_variables = variables;
+        body_variables["$index"] = static_cast<std::int64_t>(index);
         const IterationInput input{
-            index, SeedDeriver{}.derive(iteration_seed), std::move(current)};
+            index, seed, std::move(current), std::move(body_variables)};
         auto iteration = request.body(input);
         if (!iteration.success) {
             result.failed_iteration = index;
@@ -109,6 +113,19 @@ RunResult run(const RunRequest& request)
             break;
         }
         current = std::move(*iteration.feedback);
+        if (request.update_variables) {
+            auto updated = request.update_variables(variables, index + 1, seed);
+            if (!updated.success) {
+                result.failed_iteration = index + 1;
+                result.error = updated.error.empty()
+                    ? "Loop variable update failed." : std::move(updated.error);
+                result.accumulated.clear();
+                trace(request.trace_sink, {TraceEventKind::failed, *count,
+                    result.completed_iterations, result.work_units, result.error});
+                return result;
+            }
+            variables = std::move(updated.variables);
+        }
     }
     result.success = true;
     trace(request.trace_sink, {TraceEventKind::completed, *count,

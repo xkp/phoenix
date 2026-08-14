@@ -28,6 +28,7 @@ struct CacheIdentity {
     std::string kernel_version;
     std::string adapter_version;
     std::string repair_policy_version;
+    std::int32_t lod = 1;
 };
 
 struct InstructionCacheKeyInput {
@@ -68,6 +69,7 @@ struct CacheIdentityInput {
     std::string kernel_version;
     std::string adapter_version;
     std::string repair_policy_version;
+    std::int32_t lod = 1;
 };
 
 class CacheIdentityBuilder {

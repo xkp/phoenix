@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phoenix/randomness.hpp"
+#include "phoenix/scripting/contract.hpp"
 #include "phoenix/values.hpp"
 
 #include <cstddef>
@@ -23,7 +24,17 @@ struct IterationInput {
     std::size_t index = 0;
     SeedValue seed = 0;
     RuntimeValue value;
+    scripting::Bindings variables;
 };
+
+struct VariableUpdateResult {
+    bool success = true;
+    scripting::Bindings variables;
+    std::string error;
+};
+
+using VariableUpdater = std::function<VariableUpdateResult(
+    const scripting::Bindings&, std::size_t, SeedValue)>;
 
 struct IterationResult {
     bool success = true;
@@ -56,6 +67,8 @@ struct RunRequest {
     RuntimeValue input;
     SeedDerivationInput seed;
     Body body;
+    scripting::Bindings initial_variables;
+    VariableUpdater update_variables;
     TraceSink* trace_sink = nullptr;
 };
 

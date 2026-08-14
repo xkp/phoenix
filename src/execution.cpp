@@ -1976,6 +1976,7 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
         request.kernel_version,
         request.adapter_version,
         request.repair_policy_version,
+        request.context.lod,
     });
     const bool function_consumes_geometry = std::any_of(
         function.instructions.begin(), function.instructions.end(),

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phoenix/loop/function_body.hpp"
+#include "phoenix/scripting/variables.hpp"
 
 namespace phoenix::loop {
 
@@ -12,6 +13,7 @@ struct GeometryTransactionRequest {
     FunctionBodyRequest body;
     std::uint64_t item_key = 0;
     TraceSink* trace_sink = nullptr;
+    std::optional<scripting::VariablePlan> variables;
 };
 
 struct GeometryTransactionResult {

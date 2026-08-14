@@ -146,6 +146,26 @@ bool options_change_graph_and_cache_identity()
         != phoenix::CacheIdentityBuilder{}.graph_revision(second_function);
 }
 
+bool variable_expressions_update_atomically_and_change_identity()
+{
+    using namespace phoenix;
+    loop::InstructionConfig config;
+    config.options.count=3;
+    scripting::VariablePlan variables;
+    scripting::VariableSpec value;value.name="value";value.initial_value=std::int64_t{2};
+    scripting::ExpressionSpec update;update.program.source="value + _index";value.update=update;
+    variables.variables.push_back(value);config.variables=variables;
+    const auto initialized=scripting::initialize_variables(variables);
+    const auto first=scripting::update_variables(variables,*initialized.values,1,7);
+    const auto second=scripting::update_variables(variables,*first.values,2,8);
+    auto changed=config;changed.variables->variables[0].update->program.source="value + 1";
+    auto changed_initial=config;changed_initial.variables->variables[0].initial_value=std::int64_t{3};
+    return initialized.success()&&first.success()&&second.success()
+        &&std::get<std::int64_t>(second.values->at("value"))==5
+        &&loop::configuration_revision(config)!=loop::configuration_revision(changed)
+        &&loop::configuration_revision(config)!=loop::configuration_revision(changed_initial);
+}
+
 bool changed_loop_scope_failure_restores_source()
 {
     using namespace phoenix;
@@ -314,9 +334,11 @@ int main()
     const bool identity = options_change_graph_and_cache_identity();
     const bool restoration = changed_loop_scope_failure_restores_source();
     const bool partial = partial_rerun_replays_and_restores();
+    const bool variables = variable_expressions_update_atomically_and_change_identity();
     std::cout << "loop instruction publication, cache, trace: " << result << '\n'
               << "loop option cache identity: " << identity << '\n'
               << "loop changed-scope restoration: " << restoration << '\n';
     std::cout << "loop partial-rerun replay and restoration: " << partial << '\n';
-    return result && identity && restoration && partial ? 0 : 1;
+    std::cout << "loop expression variables and identity: " << variables << '\n';
+    return result && identity && restoration && partial && variables ? 0 : 1;
 }

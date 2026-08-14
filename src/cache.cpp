@@ -53,6 +53,8 @@ void append_identity(std::ostringstream& stream, const CacheIdentity& identity)
     append_field(stream, identity.adapter_version);
     append_separator(stream);
     append_field(stream, identity.repair_policy_version);
+    append_separator(stream);
+    append_number_field(stream, static_cast<std::uint64_t>(identity.lod));
 }
 
 CacheKey make_key(const char* kind, const CacheIdentity& identity)
@@ -471,6 +473,7 @@ CacheIdentity CacheIdentityBuilder::identity(const CacheIdentityInput& input) co
     identity.kernel_version = input.kernel_version;
     identity.adapter_version = input.adapter_version;
     identity.repair_policy_version = input.repair_policy_version;
+    identity.lod = input.lod;
     return identity;
 }
 

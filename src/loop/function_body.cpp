@@ -36,6 +36,11 @@ Body make_function_body(FunctionBodyRequest request)
             {request.ports.input, iteration.value},
             {request.ports.index, RuntimeValue::literal(
                 static_cast<std::int64_t>(iteration.index))}};
+        for (const auto& variable : iteration.variables) {
+            if (variable.first == request.ports.index) continue;
+            execution.inputs.push_back({variable.first, RuntimeValue::literal(
+                std::visit([](const auto& value) -> LiteralScalar { return value; }, variable.second))});
+        }
 
         execution.publication_ledger = request.staging_publication_ledger;
         const auto result = request.executor->run(execution);

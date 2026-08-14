@@ -101,6 +101,27 @@ bool work_budget_and_trace()
         && trace.events.back().kind == phoenix::loop::TraceEventKind::failed;
 }
 
+bool carries_atomic_variable_state()
+{
+    using namespace phoenix;
+    loop::RunRequest request;
+    request.options.count=3;request.input=RuntimeValue::literal(std::int64_t{1});
+    request.initial_variables={{"value",std::int64_t{2}}};
+    request.update_variables=[](const scripting::Bindings& previous,std::size_t,SeedValue) {
+        auto next=previous;next["value"]=std::get<std::int64_t>(previous.at("value"))+3;
+        return loop::VariableUpdateResult{true,std::move(next),{}};
+    };
+    std::vector<std::int64_t> values,indexes;
+    request.body=[&](const loop::IterationInput& input) {
+        values.push_back(std::get<std::int64_t>(input.variables.at("value")));
+        indexes.push_back(std::get<std::int64_t>(input.variables.at("$index")));
+        loop::IterationResult result;result.feedback=input.value;return result;
+    };
+    const auto result=loop::run(request);
+    return result.success&&values==std::vector<std::int64_t>{2,5,8}
+        &&indexes==std::vector<std::int64_t>{0,1,2};
+}
+
 } // namespace
 
 int main()
@@ -109,9 +130,11 @@ int main()
     const bool early = early_termination();
     const bool transactional = failure_and_budget_are_transactional();
     const bool work = work_budget_and_trace();
+    const bool variables = carries_atomic_variable_state();
     std::cout << "loop feedback, accumulation, index, seeds: " << feedback << '\n'
               << "loop early termination: " << early << '\n'
               << "loop transactional failure and budget: " << transactional << '\n'
               << "loop work budget and trace: " << work << '\n';
-    return feedback && early && transactional && work ? 0 : 1;
+    std::cout << "loop variable state: " << variables << '\n';
+    return feedback && early && transactional && work && variables ? 0 : 1;
 }

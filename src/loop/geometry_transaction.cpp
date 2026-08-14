@@ -56,6 +56,22 @@ GeometryTransactionResult run_geometry_transaction(const GeometryTransactionRequ
     run_request.seed = request.seed;
     run_request.body = make_function_body(std::move(body_request));
     run_request.trace_sink = request.trace_sink;
+    if (request.variables) {
+        const auto initialized = scripting::initialize_variables(*request.variables);
+        if (!initialized.success()) {
+            result.loop.error = initialized.error;
+            result.publication.failure_message = result.loop.error;
+            return result;
+        }
+        run_request.initial_variables = *initialized.values;
+        const auto plan = *request.variables;
+        run_request.update_variables = [plan](const scripting::Bindings& previous,
+            std::size_t index, SeedValue seed) {
+            const auto evaluated = scripting::update_variables(plan, previous, index, seed);
+            return VariableUpdateResult{evaluated.success(),
+                evaluated.values.value_or(scripting::Bindings{}), evaluated.error};
+        };
+    }
     result.loop = run(run_request);
     if (!result.loop.success) {
         result.publication.failure_message = result.loop.error;
