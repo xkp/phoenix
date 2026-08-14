@@ -33,7 +33,7 @@ public:
     [[nodiscard]] const CollisionMap& collisions() const noexcept { return collisions_; }
 
 private:
-    class Observer final : public CGAL::Aos_observer<Arrangement> {
+    class Observer final : public Arrangement::Observer {
     public:
         explicit Observer(Arrangement& arrangement);
         void clear_collision();

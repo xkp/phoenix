@@ -8,7 +8,7 @@
 namespace phoenix::extrusion {
 
 PlanBuilder::Observer::Observer(Arrangement& arrangement)
-    : CGAL::Aos_observer<Arrangement>(arrangement)
+    : Arrangement::Observer(arrangement)
 {
 }
 

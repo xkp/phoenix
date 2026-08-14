@@ -132,14 +132,14 @@ void partition_tesselator::apply_labels(geometry::edge2 he_north, point2 pt_sout
 
 const int TAG_FACE_ADDED = 1;
 
-class face_observer : public CGAL::Aos_observer<geometry::arrangement2>
+class face_observer : public geometry::arrangement2::Observer
 {
 	face2_list& _faces;
 	//std::set<face2> added_faces;
 
 public:
 	face_observer(geometry::arrangement2& arr, face2_list& faces) :
-		CGAL::Aos_observer<geometry::arrangement2>(arr),
+		geometry::arrangement2::Observer(arr),
 		_faces(faces)
 	{
 	}

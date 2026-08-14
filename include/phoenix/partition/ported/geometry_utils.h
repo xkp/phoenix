@@ -798,13 +798,14 @@ static void make_double(A& arr_)
 
 static edge2_list insert(A& arr, segment2 seg)
 {
-	class observer : public CGAL::Aos_observer<A>
+	using observer_base = typename A::Observer;
+	class observer : public observer_base
 	{
 		edge2_list _edges;
 
 	public:
 		observer(A& arr) :
-			CGAL::Aos_observer<A>(arr),
+			observer_base(arr),
 			_edges()
 		{
 		}
