@@ -124,6 +124,14 @@ RuntimeValue RuntimeValue::geometry_collection(std::vector<GeometryValue> contri
     return value;
 }
 
+RuntimeValue RuntimeValue::element_selection(ElementSelectionValue selection)
+{
+    RuntimeValue value;
+    value.presence = ValuePresence::present;
+    value.payload = std::move(selection);
+    return value;
+}
+
 RuntimeValue RuntimeValue::literal(LiteralValue literal_value)
 {
     RuntimeValue value;
@@ -175,6 +183,11 @@ bool RuntimeValue::is_literal() const noexcept
     return std::holds_alternative<LiteralValue>(payload);
 }
 
+bool RuntimeValue::is_element_selection() const noexcept
+{
+    return std::holds_alternative<ElementSelectionValue>(payload);
+}
+
 const GeometryValue* RuntimeValue::as_geometry() const noexcept
 {
     return std::get_if<GeometryValue>(&payload);
@@ -188,6 +201,11 @@ const GeometryCollectionValue* RuntimeValue::as_geometry_collection() const noex
 const LiteralValue* RuntimeValue::as_literal() const noexcept
 {
     return std::get_if<LiteralValue>(&payload);
+}
+
+const ElementSelectionValue* RuntimeValue::as_element_selection() const noexcept
+{
+    return std::get_if<ElementSelectionValue>(&payload);
 }
 
 const DefaultValue* RuntimeValue::as_default() const noexcept

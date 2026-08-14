@@ -536,3 +536,19 @@ architecture is finalized.
 
 Add new requirements here as they become known, even if the design decision is
 still open.
+
+### Scripted geometry
+
+- The production-compatible `script` instruction must inspect, create, and
+  modify canonical 3D geometry, including face and directed-edge labels; it is
+  distinct from scalar expression evaluation.
+- Script geometry edits are invocation-local and transactional. Canonical input
+  geometry is immutable, and no edit is published or consumed until the entire
+  script succeeds and every output validates.
+- Script failure, cancellation, budget exhaustion, invalid topology, or invalid
+  labels discards all pending outputs and preserves source geometry.
+- Production 2D script geometry is not ported.
+- Script mesh booleans are post-port work and do not gate completion of the
+  production corpus port; their legacy label-transfer semantics require
+  differential validation before adoption.
+- Script includes are immutable resolved assets, not filesystem access.

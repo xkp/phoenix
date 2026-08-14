@@ -152,6 +152,19 @@ bool test_geometry_aggregation()
         && aggregate.status == phoenix::GeometryAggregationStatus::aggregated;
 }
 
+bool test_element_selection_value()
+{
+    phoenix::ElementSelectionValue selection;
+    selection.source={"selected","actor:selection",{}};
+    selection.kind=phoenix::GeometryElementKind::face;
+    selection.element_ids={10,20};
+    const auto value=phoenix::RuntimeValue::element_selection(std::move(selection));
+    const auto* stored=value.as_element_selection();
+    return value.is_present()&&value.is_element_selection()&&stored&&
+        stored->kind==phoenix::GeometryElementKind::face&&
+        stored->element_ids==std::vector<std::uint64_t>{10,20};
+}
+
 bool test_geometry_aggregation_rejects_cross_actor_owners()
 {
     phoenix::GeometryAggregationInput input;
@@ -188,6 +201,7 @@ int main()
     ok = run_test("geometry value", test_geometry_value) && ok;
     ok = run_test("geometry collection value", test_geometry_collection_value) && ok;
     ok = run_test("literal value", test_literal_value) && ok;
+    ok = run_test("element selection value", test_element_selection_value) && ok;
     ok = run_test("literal kind", test_literal_kind) && ok;
     ok = run_test("literal first scalar from array", test_literal_first_scalar_from_array) && ok;
     ok = run_test("defaulted value", test_defaulted_value) && ok;

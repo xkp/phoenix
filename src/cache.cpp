@@ -250,6 +250,21 @@ void append_runtime_value(std::ostringstream& stream, const RuntimeValue& value)
         return;
     }
 
+    if (const auto* selection = value.as_element_selection()) {
+        append_field(stream, "element_selection");
+        append_separator(stream);
+        append_geometry_value(stream, selection->source);
+        append_separator(stream);
+        append_number_field(stream, static_cast<std::uint64_t>(selection->kind));
+        append_separator(stream);
+        append_number_field(stream, static_cast<std::uint64_t>(selection->element_ids.size()));
+        for (const auto id : selection->element_ids) {
+            append_separator(stream);
+            append_number_field(stream, id);
+        }
+        return;
+    }
+
     if (const auto* default_value = value.as_default()) {
         append_field(stream, "default");
         append_separator(stream);

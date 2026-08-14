@@ -1134,6 +1134,172 @@ deterministic seed/cache semantics, sandbox and resource limits, diagnostics,
 and portability requirements before implementing script-dependent control
 instructions, selection, rename, profile variables, instancing, or attributes.
 
+Scripting S0-S1 are complete and recorded in `PORTING_SCRIPTING_CONTRACT.md`. The
+engine-independent C++ boundary defines versioned source programs, immutable
+typed bindings with local-over-global precedence, stable diagnostics, hard
+budget inputs, cancellation, deterministic seed input, and complete cache
+identity. It explicitly denies ambient host capabilities and engine bytecode
+persistence. The engine-neutral corpus covers scalar results, arithmetic,
+comparison, boolean logic, conditionals, binding precedence, invalid syntax,
+unsupported results, isolation, and budget interruption. A migration adapter
+rewrites production bracketed variable names into safe explicit bindings. No
+persisted expression corpus was found in the inspected source checkout, so P12
+must augment these source-derived cases from real projects. S2 can now compare
+sandboxed JavaScript engine candidates against this common corpus.
+
+The production `script` instruction is a separate required geometry-capable
+surface, not merely another scalar expression consumer. The contract now has a
+`ScriptEngine` extension and invocation-local transactional 3D geometry host.
+It permits geometry creation and edits while keeping canonical inputs immutable
+and preserving stable face/directed-edge label handling. S1G must finish this
+host corpus before S2 evaluates engines; 2D script geometry remains excluded.
+The first S1G classification is in `PORTING_SCRIPT_BINDINGS_INVENTORY.md` and
+recovers the production JavaScript API and kernel semantics while rejecting old
+V8 templates, native pointer lifetimes, filesystem export, and 2D arrangements.
+The first geometry host foundation is implemented on an invocation-local CGAL
+`Surface_mesh`: canonical inputs are promoted through the shared adapter,
+opaque generation-checked handles resolve to CGAL descriptors, point and stable
+label edits mutate only the working mesh, and commit demotes and validates all
+outputs atomically. Canonical geometry remains the ownership/publication
+format, not a replacement topology kernel. Promotion is lazy: cloning records
+the immutable canonical source, first mesh inspection/mutation materializes
+CGAL, and an untouched output reuses the original canonical reference without
+building or demoting a working mesh. The core builder now
+adds vertices and oriented polygon faces directly to CGAL, assigns stable run
+IDs, preserves face and directed-edge labels, shares edge identity across
+opposites, and surfaces CGAL rejection for conflicting/non-manifold insertion.
+The first production topology slice is also complete: face-boundary traversal,
+`split_edge`, `split_facet`, and `join_facet` use CGAL Euler operations rather
+than a Phoenix topology reimplementation. Topology edits advance the handle
+generation, allocate stable IDs for new elements, leave genuinely new labels
+unassigned as production does, and preserve the retained face label across a
+split/join round trip.
+The second topology batch adds `flip_edge`, `make_hole`, and `fill_hole`
+directly through CGAL Euler operations. Calls reject invalid border/triangle
+preconditions before mutation, invalidate the prior handle generation, and
+give a newly filled face an unassigned label. Live-element enumeration is used
+for script-visible counts because CGAL retains removed descriptor slots until
+garbage collection; leaking that storage detail would drift from production.
+The third topology batch ports vertex split/join and center-vertex
+creation/removal directly through CGAL. Preconditions are checked before the
+operation, all prior topology handles become stale, new elements receive
+run-scoped stable IDs and unassigned labels, and reversible fixtures verify
+successful canonical publication with the retained production face label.
+The final mesh-management batch ports both border-growth calls using their
+CGAL 6.2 Euler equivalents, plus facet/component erasure, largest-component
+retention, clear, and orientation reversal. `normalize_border` deliberately
+does no work because its only production effect was rearranging physical
+`Polyhedron_3` iterator storage, which is not observable through Phoenix's
+opaque handles and explicit border query.
+The invocation host now connects this geometry surface to the engine-neutral
+script contract. Inputs are keyed by every declared port, created geometry is
+private until explicitly named as an output, output names and kinds are checked
+against the instruction descriptor, and commit remains atomic. Host-issued
+element tokens are resolved to stable run IDs before the CGAL session closes;
+foreign, duplicate, mixed-kind, and generation-stale outputs fail the whole
+invocation without publication.
+The first inspection slice is complete as well. It exposes CGAL mesh element
+collections and counts (including both directed halfedges), border queries,
+face and vertex incidence rings, source/target/facet navigation, degrees, and
+the production bivalent/trivalent and triangle/quad predicates without
+materializing untouched geometry before an inspection is actually requested.
+The engine-neutral 3D primitive foundation is also in place. Values remain
+compact doubles through ordinary script data flow; segments, lines, rays,
+triangles, planes, directions, vectors, and affine transforms do not allocate
+a mesh. Robust containment and orientation predicates upgrade locally through
+CGAL, while transforms, projections, and arithmetic stay in the lightweight
+representation. This preserves the precision-boundary rule and leaves 2D
+primitives excluded.
+Typed 3D intersections now cover the complete production overload matrix for
+lines, planes, and segments. They use CGAL's exact-construction kernel only
+inside the operation and return a closed `none`, point, line, segment, or plane
+variant in lightweight script values. This replaces production's ambiguous
+empty/property-bag result without losing any successful result category.
+S2 has selected the vcpkg-pinned QuickJS-NG 0.16.1 runtime. The concrete
+engine adapter creates a fresh runtime and context per invocation,
+installs memory, stack, cancellation, and interrupt limits before evaluation,
+and exposes only validated scalar bindings. It passes the version-one scalar
+corpus, including syntax and result rejection, invocation isolation, infinite
+loop interruption, pre-cancellation, and memory exhaustion. Ordered immutable
+library assets now execute in one invocation context before the main body.
+The initial script host projection exposes frozen `td.vars`, stable integer
+`td.labels`, every named input through `td.inputs`, and the first-input
+compatibility alias `td.input`. The returned named scalar object is finalized
+through `InvocationGeometryHost`, so undeclared or wrongly typed outputs still
+roll back atomically. No ambient process,
+filesystem, network, module-loader, or `quickjs-libc` surface is linked. The
+The first geometry bridge is complete: scripts can explicitly create or clone
+geometry, add and move vertices, add polygon faces, assign stable face and
+directed-edge label IDs, remove faces, and request typed element collections.
+JavaScript sees only frozen invocation tokens. Geometry and homogeneous element
+returns are decoded and passed to the existing atomic host, which rejects
+foreign or generation-stale tokens. Script exceptions roll back private edits.
+Mutable geometry readback now covers vertex/face counts, vertex point snapshots,
+face loops, face labels, and directed-edge label lists. `td.log` writes only to
+the result collector and is capped at 1,024 entries and 64 KiB per invocation;
+exceeding either limit fails and rolls back the script. Remaining S2 work is the
+The complete mutation set already present in `GeometryEditSession` is now
+callable through opaque JavaScript handles: edge/facet and vertex split/join,
+edge flip, center-vertex creation/removal, hole creation/fill, both border-growth
+operations, component erasure/retention, clear, orientation reversal, and the
+documented border-normalization compatibility no-op. Remaining S2 work is the
+The production incidence/predicate inspection projection is complete through
+`td.inspectGeometry(mesh)` and `td.inspect(element)`. It covers mesh counts,
+border state, closure/purity predicates, stable IDs and labels, vertex points,
+face/vertex incidence rings, degrees, and halfedge navigation. Related objects
+remain opaque generation-checked handles, so stale access fails after topology
+mutation. The 3D primitive bindings and Linux/macOS debug/release scripting CI
+are complete; this remains one CGAL-backed geometry implementation.
+The first JavaScript 3D value slice is now live. `point3`, `vec3`, `dir3`,
+`segment3`, `line3`, and `plane3` create frozen lightweight values with finite
+and non-degenerate validation. The global `intersection` dispatcher covers the
+entire implemented line/plane/segment overload matrix and returns typed frozen
+values (or `null` for no intersection). Exact CGAL construction remains scoped
+inside the existing intersection workers; ordinary script values stay doubles.
+`ray3`, `triangle3`, and `transform3` are now bound as well. The frozen
+`transforms` factory exposes identity, translation, non-uniform scaling, and
+axis rotation. Point/vector arithmetic, transforms across point/vector/
+direction/segment/line/ray/triangle values, exact `has_on` predicates,
+opposites, segment squared length, and triangle squared area execute through
+the existing C++ value layer. The recorded production primitive surface is now
+complete: indexed vertices, direction/vector aliases, supporting and
+perpendicular constructions, projections, plane points/bases/side predicates,
+inverse-transpose plane transforms, transform composition/inversion and matrix
+access, global deterministic math aliases, `PI`, `equals`, and orientation/side
+constants are bound. P12 real-project differential fixtures may still reveal
+observable overload quirks, but there is no known primitive API item left in
+the source inventory.
+The first graph-level `script` instruction handler is complete. It maps promised
+geometry and scalar ports into a `ScriptRequest`, derives the deterministic seed
+from the execution frame, requires the run-scoped element-ID allocator, invokes
+the configured `ScriptEngine`, atomically finalizes the geometry host, preserves
+the current/input actor owner for geometry publication, and converts scalar and
+whole-geometry results back to ordinary `RuntimeValue` ports. A full
+`FunctionExecutor` fixture verifies input routing, QuickJS execution, geometry
+mutation, scalar conversion, and function-output publication end to end.
+Phoenix now has a first-class `ElementSelectionValue`: an owning canonical
+geometry snapshot, an explicit vertex/halfedge/face kind, and stable element
+IDs. Script element-list outputs commit their backing working geometry in the
+same atomic transaction and flow through graph ports without copying faces or
+substituting traversal indices. Cache fingerprints include the backing geometry,
+kind, and ordered stable IDs. The graph-level fixture now publishes geometry,
+scalar, and face-selection outputs together end to end. Selection-valued script
+inputs now round-trip as JavaScript `vertices3`/`edges3`/`faces3` opaque arrays,
+resolving stable IDs against the selection's owning snapshot only when
+requested.
+
+Production-compatible global `build_mesh(outputName)` and `normal(...)` entry
+points are present. `build_mesh` requires the explicit Phoenix output name so
+created geometry cannot be published implicitly; its builder supports vertex
+and labeled polygon construction.
+
+The three production boolean globals are explicitly post-port work and do not
+gate completion of the production corpus port. Production implements them with exact
+`Nef_polyhedron_3`, conversion back to a polygon mesh, and bespoke
+tolerance-based label transfer containing an apparent `is1`/`is2` branch
+defect. Phoenix will not silently canonize that mutation behavior before
+real-project differential fixtures establish the intended stable-label result.
+
 The expected order is:
 
 1. merge

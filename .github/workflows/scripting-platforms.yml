@@ -1,0 +1,55 @@
+name: Scripting platforms
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "vcpkg.json"
+      - "include/phoenix/scripting/**"
+      - "src/scripting/**"
+      - "tests/scripting_*"
+      - ".github/workflows/scripting-platforms.yml"
+  pull_request:
+
+jobs:
+  gcc:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        preset: [linux-debug, linux-release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenSubdiv Linux prerequisites
+        run: sudo apt-get update && sudo apt-get install -y libxinerama-dev libxxf86vm-dev
+      - uses: lukka/run-vcpkg@v11
+      - uses: lukka/run-cmake@v10
+        with:
+          configurePreset: ${{ matrix.preset }}
+          buildPreset: build-${{ matrix.preset }}
+      - name: Run scripting suite
+        shell: bash
+        run: |
+          for test in phoenix_scripting_contract_tests phoenix_scripting_conformance_tests phoenix_scripting_quickjs_engine_tests phoenix_scripting_geometry_session_tests phoenix_scripting_instruction_tests phoenix_scripting_invocation_host_tests phoenix_scripting_primitives3_tests phoenix_scripting_intersections3_tests phoenix_value_tests phoenix_cache_tests; do
+            build/${{ matrix.preset }}/$test
+          done
+
+  apple-silicon:
+    runs-on: macos-14
+    strategy:
+      matrix:
+        preset: [macos-apple-silicon-debug, macos-apple-silicon-release]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/run-vcpkg@v11
+      - uses: lukka/run-cmake@v10
+        with:
+          configurePreset: ${{ matrix.preset }}
+          buildPreset: build-${{ matrix.preset }}
+      - name: Run scripting suite
+        shell: bash
+        run: |
+          for test in phoenix_scripting_contract_tests phoenix_scripting_conformance_tests phoenix_scripting_quickjs_engine_tests phoenix_scripting_geometry_session_tests phoenix_scripting_instruction_tests phoenix_scripting_invocation_host_tests phoenix_scripting_primitives3_tests phoenix_scripting_intersections3_tests phoenix_value_tests phoenix_cache_tests; do
+            build/${{ matrix.preset }}/$test
+          done

@@ -240,6 +240,19 @@ bool test_input_fingerprint_changes_with_geometry_owner()
     return builder.input_fingerprint(first) != builder.input_fingerprint(second);
 }
 
+bool test_input_fingerprint_changes_with_selection_ids()
+{
+    phoenix::ElementSelectionValue first_selection{{"selection","actor",{}},
+        phoenix::GeometryElementKind::face,{10}};
+    auto second_selection=first_selection;second_selection.element_ids={11};
+    const std::vector<phoenix::PortValue> first={{"faces",
+        phoenix::RuntimeValue::element_selection(std::move(first_selection))}};
+    const std::vector<phoenix::PortValue> second={{"faces",
+        phoenix::RuntimeValue::element_selection(std::move(second_selection))}};
+    const phoenix::CacheIdentityBuilder builder;
+    return builder.input_fingerprint(first)!=builder.input_fingerprint(second);
+}
+
 bool test_cache_identity_builder_populates_identity()
 {
     auto function = FunctionDescriptor{};
@@ -567,6 +580,7 @@ int main()
     ok = run_test("graph revision changes with instruction shape", test_graph_revision_changes_with_instruction_shape) && ok;
     ok = run_test("input fingerprint is stable by port name", test_input_fingerprint_is_stable_by_port_name) && ok;
     ok = run_test("input fingerprint changes with geometry owner", test_input_fingerprint_changes_with_geometry_owner) && ok;
+    ok = run_test("input fingerprint changes with selection ids", test_input_fingerprint_changes_with_selection_ids) && ok;
     ok = run_test("cache identity builder populates identity", test_cache_identity_builder_populates_identity) && ok;
     ok = run_test("missing instruction entry returns empty", test_missing_instruction_entry_returns_empty) && ok;
     ok = run_test("stored instruction outputs can be retrieved", test_stored_instruction_outputs_can_be_retrieved) && ok;

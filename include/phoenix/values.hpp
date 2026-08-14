@@ -27,6 +27,14 @@ struct GeometryCollectionValue {
     std::vector<GeometryValue> contributions;
 };
 
+enum class GeometryElementKind { vertex, halfedge, face };
+
+struct ElementSelectionValue {
+    GeometryValue source;
+    GeometryElementKind kind = GeometryElementKind::face;
+    std::vector<std::uint64_t> element_ids;
+};
+
 using LiteralScalar = std::variant<std::int64_t, double, bool, std::string>;
 using LiteralArray = std::vector<LiteralScalar>;
 using LiteralValue = std::variant<LiteralScalar, LiteralArray>;
@@ -45,7 +53,8 @@ enum class ValuePresence {
     defaulted,
 };
 
-using RuntimePayload = std::variant<GeometryValue, GeometryCollectionValue, LiteralValue, EmptyValue, DefaultValue>;
+using RuntimePayload = std::variant<GeometryValue, GeometryCollectionValue,
+    ElementSelectionValue, LiteralValue, EmptyValue, DefaultValue>;
 
 struct RuntimeValue {
     ValuePresence presence = ValuePresence::missing;
@@ -61,6 +70,7 @@ struct RuntimeValue {
         std::string debug_label = {},
         std::optional<ActorId> accumulation_actor_id = std::nullopt);
     [[nodiscard]] static RuntimeValue geometry_collection(std::vector<GeometryValue> contributions);
+    [[nodiscard]] static RuntimeValue element_selection(ElementSelectionValue selection);
     [[nodiscard]] static RuntimeValue literal(LiteralValue value);
     [[nodiscard]] static RuntimeValue defaulted(TypeId source_type);
 
@@ -71,10 +81,12 @@ struct RuntimeValue {
     [[nodiscard]] bool is_geometry() const noexcept;
     [[nodiscard]] bool is_geometry_collection() const noexcept;
     [[nodiscard]] bool is_literal() const noexcept;
+    [[nodiscard]] bool is_element_selection() const noexcept;
 
     [[nodiscard]] const GeometryValue* as_geometry() const noexcept;
     [[nodiscard]] const GeometryCollectionValue* as_geometry_collection() const noexcept;
     [[nodiscard]] const LiteralValue* as_literal() const noexcept;
+    [[nodiscard]] const ElementSelectionValue* as_element_selection() const noexcept;
     [[nodiscard]] const DefaultValue* as_default() const noexcept;
 };
 

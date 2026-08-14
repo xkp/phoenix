@@ -8,6 +8,155 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(CGAL REQUIRED)
 find_package(OpenSubdiv CONFIG REQUIRED)
+find_package(qjs CONFIG REQUIRED)
+
+add_executable(phoenix_scripting_contract_tests
+    src/scripting/contract.cpp
+    tests/scripting_contract_tests.cpp
+)
+target_include_directories(phoenix_scripting_contract_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_scripting_contract_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_scripting_contract_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_scripting_conformance_tests
+    src/scripting/conformance.cpp
+    tests/scripting_conformance_tests.cpp
+)
+target_include_directories(phoenix_scripting_conformance_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_scripting_conformance_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_scripting_conformance_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_scripting_quickjs_engine_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/scripting/contract.cpp
+    src/scripting/conformance.cpp
+    src/scripting/geometry_session.cpp
+    src/scripting/invocation_host.cpp
+    src/scripting/intersections3.cpp
+    src/scripting/primitives3.cpp
+    src/scripting/quickjs_engine.cpp
+    src/working_geometry.cpp
+    tests/scripting_quickjs_engine_tests.cpp
+)
+target_include_directories(phoenix_scripting_quickjs_engine_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_scripting_quickjs_engine_tests PRIVATE qjs CGAL::CGAL)
+if(MSVC)
+    target_compile_options(phoenix_scripting_quickjs_engine_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_scripting_quickjs_engine_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_scripting_geometry_session_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/scripting/geometry_session.cpp
+    src/working_geometry.cpp
+    tests/scripting_geometry_session_tests.cpp
+)
+target_include_directories(phoenix_scripting_geometry_session_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+if(MSVC)
+    target_compile_options(phoenix_scripting_geometry_session_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_scripting_geometry_session_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+target_link_libraries(phoenix_scripting_geometry_session_tests PRIVATE CGAL::CGAL)
+
+add_executable(phoenix_scripting_instruction_tests
+    src/cache.cpp
+    src/execution.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/invalidation.cpp
+    src/labels.cpp
+    src/partial_run.cpp
+    src/partial_run_apply.cpp
+    src/partial_run_scope.cpp
+    src/publication.cpp
+    src/randomness.cpp
+    src/scene_update.cpp
+    src/values.cpp
+    src/working_geometry.cpp
+    src/scripting/contract.cpp
+    src/scripting/geometry_session.cpp
+    src/scripting/instruction.cpp
+    src/scripting/intersections3.cpp
+    src/scripting/invocation_host.cpp
+    src/scripting/primitives3.cpp
+    src/scripting/quickjs_engine.cpp
+    tests/scripting_instruction_tests.cpp
+)
+target_include_directories(phoenix_scripting_instruction_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_scripting_instruction_tests PRIVATE CGAL::CGAL qjs)
+if(MSVC)
+    target_compile_options(phoenix_scripting_instruction_tests PRIVATE /W4 /permissive- /bigobj)
+else()
+    target_compile_options(phoenix_scripting_instruction_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_scripting_invocation_host_tests
+    src/geometry.cpp
+    src/labels.cpp
+    src/scripting/contract.cpp
+    src/scripting/geometry_session.cpp
+    src/scripting/invocation_host.cpp
+    src/working_geometry.cpp
+    tests/scripting_invocation_host_tests.cpp
+)
+target_include_directories(phoenix_scripting_invocation_host_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_scripting_invocation_host_tests PRIVATE CGAL::CGAL)
+if(MSVC)
+    target_compile_options(phoenix_scripting_invocation_host_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_scripting_invocation_host_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_scripting_primitives3_tests
+    src/scripting/primitives3.cpp
+    tests/scripting_primitives3_tests.cpp
+)
+target_include_directories(phoenix_scripting_primitives3_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_scripting_primitives3_tests PRIVATE CGAL::CGAL)
+if(MSVC)
+    target_compile_options(phoenix_scripting_primitives3_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_scripting_primitives3_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_scripting_intersections3_tests
+    src/scripting/primitives3.cpp
+    src/scripting/intersections3.cpp
+    tests/scripting_intersections3_tests.cpp
+)
+target_include_directories(phoenix_scripting_intersections3_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_scripting_intersections3_tests PRIVATE CGAL::CGAL)
+if(MSVC)
+    target_compile_options(phoenix_scripting_intersections3_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_scripting_intersections3_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 add_executable(phoenix_if_instruction_tests
     src/cache.cpp
