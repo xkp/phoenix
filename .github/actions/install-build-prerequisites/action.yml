@@ -1,0 +1,16 @@
+name: Install Phoenix build prerequisites
+description: Install host tools required by vcpkg native builds and OpenSubdiv.
+runs:
+  using: composite
+  steps:
+    - name: Install Linux prerequisites
+      if: runner.os == 'Linux'
+      shell: bash
+      run: >-
+        sudo apt-get update && sudo apt-get install -y
+        autoconf autoconf-archive automake libtool
+        libxinerama-dev libxxf86vm-dev
+    - name: Install macOS prerequisites
+      if: runner.os == 'macOS'
+      shell: bash
+      run: brew install autoconf autoconf-archive automake libtool

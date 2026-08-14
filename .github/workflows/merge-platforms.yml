@@ -23,6 +23,7 @@ jobs:
         preset: [linux-debug, linux-release]
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/install-build-prerequisites
       - uses: lukka/run-vcpkg@v11
       - uses: lukka/run-cmake@v10
         with:
@@ -38,6 +39,7 @@ jobs:
         preset: [macos-apple-silicon-debug, macos-apple-silicon-release]
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/install-build-prerequisites
       - uses: lukka/run-vcpkg@v11
       - uses: lukka/run-cmake@v10
         with:
