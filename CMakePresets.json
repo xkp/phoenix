@@ -123,35 +123,43 @@
   "buildPresets": [
     {
       "name": "build-windows-debug",
-      "configurePreset": "windows-debug"
+      "configurePreset": "windows-debug",
+      "jobs": 2
     },
     {
       "name": "build-windows-release",
-      "configurePreset": "windows-release"
+      "configurePreset": "windows-release",
+      "jobs": 2
     },
     {
       "name": "build-linux-debug",
-      "configurePreset": "linux-debug"
+      "configurePreset": "linux-debug",
+      "jobs": 2
     },
     {
       "name": "build-linux-release",
-      "configurePreset": "linux-release"
+      "configurePreset": "linux-release",
+      "jobs": 2
     },
     {
       "name": "build-macos-apple-silicon-debug",
-      "configurePreset": "macos-apple-silicon-debug"
+      "configurePreset": "macos-apple-silicon-debug",
+      "jobs": 2
     },
     {
       "name": "build-macos-apple-silicon-release",
-      "configurePreset": "macos-apple-silicon-release"
+      "configurePreset": "macos-apple-silicon-release",
+      "jobs": 2
     },
     {
       "name": "build-macos-intel-debug",
-      "configurePreset": "macos-intel-debug"
+      "configurePreset": "macos-intel-debug",
+      "jobs": 2
     },
     {
       "name": "build-macos-intel-release",
-      "configurePreset": "macos-intel-release"
+      "configurePreset": "macos-intel-release",
+      "jobs": 2
     }
   ]
 }
