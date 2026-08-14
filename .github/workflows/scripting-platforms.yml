@@ -26,7 +26,16 @@ jobs:
       - uses: lukka/run-cmake@v10
         with:
           configurePreset: ${{ matrix.preset }}
-          buildPreset: build-${{ matrix.preset }}
+      - name: Build scripting suite
+        shell: bash
+        run: |
+          cmake --build build/${{ matrix.preset }} --parallel 1 --target \
+            phoenix_scripting_contract_tests phoenix_scripting_conformance_tests phoenix_scripting_quickjs_engine_tests \
+            phoenix_scripting_geometry_session_tests phoenix_scripting_instruction_tests phoenix_scripting_invocation_host_tests \
+            phoenix_scripting_primitives3_tests phoenix_scripting_intersections3_tests phoenix_geometry_bindings_tests \
+            phoenix_if_instruction_tests phoenix_case_instruction_tests phoenix_choice_instruction_tests phoenix_lod_instruction_tests \
+            phoenix_loop_runtime_tests phoenix_loop_function_body_tests phoenix_loop_geometry_transaction_tests phoenix_loop_instruction_tests \
+            phoenix_value_tests phoenix_cache_tests
       - name: Run scripting suite
         shell: bash
         run: |
@@ -46,7 +55,16 @@ jobs:
       - uses: lukka/run-cmake@v10
         with:
           configurePreset: ${{ matrix.preset }}
-          buildPreset: build-${{ matrix.preset }}
+      - name: Build scripting suite
+        shell: bash
+        run: |
+          cmake --build build/${{ matrix.preset }} --parallel 1 --target \
+            phoenix_scripting_contract_tests phoenix_scripting_conformance_tests phoenix_scripting_quickjs_engine_tests \
+            phoenix_scripting_geometry_session_tests phoenix_scripting_instruction_tests phoenix_scripting_invocation_host_tests \
+            phoenix_scripting_primitives3_tests phoenix_scripting_intersections3_tests phoenix_geometry_bindings_tests \
+            phoenix_if_instruction_tests phoenix_case_instruction_tests phoenix_choice_instruction_tests phoenix_lod_instruction_tests \
+            phoenix_loop_runtime_tests phoenix_loop_function_body_tests phoenix_loop_geometry_transaction_tests phoenix_loop_instruction_tests \
+            phoenix_value_tests phoenix_cache_tests
       - name: Run scripting suite
         shell: bash
         run: |

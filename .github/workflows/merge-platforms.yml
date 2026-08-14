@@ -28,7 +28,7 @@ jobs:
       - uses: lukka/run-cmake@v10
         with:
           configurePreset: ${{ matrix.preset }}
-          buildPreset: build-${{ matrix.preset }}
+      - run: cmake --build build/${{ matrix.preset }} --parallel 1 --target phoenix_merge_production_oracle_tests phoenix_merge_production_adapter_tests
       - run: build/${{ matrix.preset }}/phoenix_merge_production_oracle_tests
       - run: build/${{ matrix.preset }}/phoenix_merge_production_adapter_tests
 
@@ -44,6 +44,6 @@ jobs:
       - uses: lukka/run-cmake@v10
         with:
           configurePreset: ${{ matrix.preset }}
-          buildPreset: build-${{ matrix.preset }}
+      - run: cmake --build build/${{ matrix.preset }} --parallel 1 --target phoenix_merge_production_oracle_tests phoenix_merge_production_adapter_tests
       - run: build/${{ matrix.preset }}/phoenix_merge_production_oracle_tests
       - run: build/${{ matrix.preset }}/phoenix_merge_production_adapter_tests

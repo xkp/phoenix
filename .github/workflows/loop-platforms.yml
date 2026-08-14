@@ -28,7 +28,7 @@ jobs:
       - uses: lukka/run-cmake@v10
         with:
           configurePreset: ${{ matrix.preset }}
-          buildPreset: build-${{ matrix.preset }}
+      - run: cmake --build build/${{ matrix.preset }} --parallel 1 --target phoenix_loop_runtime_tests phoenix_loop_function_body_tests phoenix_loop_geometry_transaction_tests phoenix_loop_instruction_tests
       - run: build/${{ matrix.preset }}/phoenix_loop_runtime_tests
       - run: build/${{ matrix.preset }}/phoenix_loop_function_body_tests
       - run: build/${{ matrix.preset }}/phoenix_loop_geometry_transaction_tests
@@ -46,7 +46,7 @@ jobs:
       - uses: lukka/run-cmake@v10
         with:
           configurePreset: ${{ matrix.preset }}
-          buildPreset: build-${{ matrix.preset }}
+      - run: cmake --build build/${{ matrix.preset }} --parallel 1 --target phoenix_loop_runtime_tests phoenix_loop_function_body_tests phoenix_loop_geometry_transaction_tests phoenix_loop_instruction_tests
       - run: build/${{ matrix.preset }}/phoenix_loop_runtime_tests
       - run: build/${{ matrix.preset }}/phoenix_loop_function_body_tests
       - run: build/${{ matrix.preset }}/phoenix_loop_geometry_transaction_tests

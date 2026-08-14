@@ -510,7 +510,7 @@ void partition_tesselator::repeat_cut(const partition_cut* cut, repo_item& repo_
 	dj_.add("dst", dst);
 
 	if (src == edge2() || dst == edge2())
-		throw std::exception("degenerated segment in repeat cut");
+		throw std::runtime_error("degenerated segment in repeat cut");
 
 	// get the expanded segments, in case they were splitted by other cuts
 	edge2 src_start, src_end;

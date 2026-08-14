@@ -26,9 +26,14 @@ jobs:
       - uses: lukka/run-cmake@v10
         with:
           configurePreset: ${{ matrix.preset }}
-          buildPreset: build-${{ matrix.preset }}
+      - name: Build extrusion suite
+        run: >-
+          cmake --build build/${{ matrix.preset }} --parallel 1 --target
+          phoenix_extrusion_plan_builder_tests phoenix_extrusion_profile_tests
+          phoenix_extrusion_output_builder_tests phoenix_extrusion_kernel_compile_tests
+          phoenix_extrusion_instruction_tests
       - shell: bash
-        run: for test in build/${{ matrix.preset }}/phoenix_*_tests; do "$test"; done
+        run: for test in build/${{ matrix.preset }}/phoenix_extrusion_*_tests; do "$test"; done
 
   apple-silicon:
     runs-on: macos-14
@@ -42,9 +47,14 @@ jobs:
       - uses: lukka/run-cmake@v10
         with:
           configurePreset: ${{ matrix.preset }}
-          buildPreset: build-${{ matrix.preset }}
+      - name: Build extrusion suite
+        run: >-
+          cmake --build build/${{ matrix.preset }} --parallel 1 --target
+          phoenix_extrusion_plan_builder_tests phoenix_extrusion_profile_tests
+          phoenix_extrusion_output_builder_tests phoenix_extrusion_kernel_compile_tests
+          phoenix_extrusion_instruction_tests
       - shell: bash
-        run: for test in build/${{ matrix.preset }}/phoenix_*_tests; do "$test"; done
+        run: for test in build/${{ matrix.preset }}/phoenix_extrusion_*_tests; do "$test"; done
 
   clang-tsan:
     runs-on: ubuntu-latest
