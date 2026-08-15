@@ -34,6 +34,13 @@ void hash_string(std::uint64_t& hash, const std::string& value) noexcept
     hash_byte(hash, 0xffU);
 }
 
+bool semantically_equal(const LabelDefinition& left, const LabelDefinition& right) noexcept
+{
+    return left.name == right.name
+        && left.material == right.material
+        && left.hidden == right.hidden;
+}
+
 } // namespace
 
 bool LabelRegistry::add(
@@ -55,9 +62,11 @@ bool LabelRegistry::add(
 
     const auto found = pending_.find(uid);
     if (found != pending_.end()) {
-        if (!(found->second.definition == definition)) {
+        if (!semantically_equal(found->second.definition, definition)) {
             set_diagnostic(diagnostic, LabelDiagnosticCode::conflicting_definition, uid, origin,
-                "Label UID '" + uid + "' has conflicting immutable definitions.");
+                "Label UID '" + uid + "' has conflicting immutable definitions"
+                + " existing_name='" + found->second.definition.name + "'"
+                + " incoming_name='" + definition.name + "'.");
             return false;
         }
         found->second.origins.push_back(std::move(origin));
@@ -116,7 +125,6 @@ std::uint64_t LabelRegistry::semantic_fingerprint() const noexcept
         const auto* definition = find_definition(entry.second);
         if (definition == nullptr) continue;
         hash_string(hash, definition->name);
-        hash_string(hash, definition->color);
         hash_string(hash, definition->material);
         hash_byte(hash, definition->hidden ? 1U : 0U);
     }

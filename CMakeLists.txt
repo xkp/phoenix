@@ -1248,3 +1248,284 @@ if(MSVC)
 else()
     target_compile_options(phoenix_partial_run_dirty_instruction_discovery_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+add_executable(phoenix_production_project_discovery_tests
+    src/migration/production_project_discovery.cpp
+    tests/production_project_discovery_tests.cpp
+)
+
+target_include_directories(phoenix_production_project_discovery_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_project_discovery_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_project_discovery_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_production_project_audit_tests
+    src/migration/production_project_audit.cpp
+    src/migration/production_project_discovery.cpp
+    tests/production_project_audit_tests.cpp
+)
+
+target_include_directories(phoenix_production_project_audit_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_project_audit_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_project_audit_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_production_project_raw_load_tests
+    src/migration/production_project_discovery.cpp
+    src/migration/production_project_raw_load.cpp
+    tests/production_project_raw_load_tests.cpp
+)
+
+target_include_directories(phoenix_production_project_raw_load_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_project_raw_load_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_project_raw_load_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_production_label_registry_tests
+    src/labels.cpp
+    src/migration/production_label_registry.cpp
+    src/migration/production_project_discovery.cpp
+    src/migration/production_project_raw_load.cpp
+    tests/production_label_registry_tests.cpp
+)
+
+target_include_directories(phoenix_production_label_registry_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_label_registry_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_label_registry_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_production_profile_registry_tests
+    src/migration/production_function_linker.cpp
+    src/migration/production_profile_registry.cpp
+    src/migration/production_project_discovery.cpp
+    src/migration/production_project_raw_load.cpp
+    tests/production_profile_registry_tests.cpp
+)
+
+target_include_directories(phoenix_production_profile_registry_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_profile_registry_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_profile_registry_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_production_function_linker_tests
+    src/migration/production_function_linker.cpp
+    src/migration/production_project_discovery.cpp
+    src/migration/production_project_raw_load.cpp
+    tests/production_function_linker_tests.cpp
+)
+
+target_include_directories(phoenix_production_function_linker_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_function_linker_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_function_linker_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_production_graph_adapter_tests
+    src/migration/production_function_linker.cpp
+    src/migration/production_graph_adapter.cpp
+    src/migration/production_project_discovery.cpp
+    src/migration/production_project_raw_load.cpp
+    tests/production_graph_adapter_tests.cpp
+)
+
+target_include_directories(phoenix_production_graph_adapter_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_graph_adapter_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_graph_adapter_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_production_migration_report_tests
+    src/labels.cpp
+    src/migration/production_function_linker.cpp
+    src/migration/production_graph_adapter.cpp
+    src/migration/production_label_registry.cpp
+    src/migration/production_migration_overrides.cpp
+    src/migration/production_migration_report.cpp
+    src/migration/production_profile_registry.cpp
+    src/migration/production_project_discovery.cpp
+    src/migration/production_project_raw_load.cpp
+    tests/production_migration_report_tests.cpp
+)
+
+target_include_directories(phoenix_production_migration_report_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_migration_report_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_migration_report_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_production_migrated_package_tests
+    src/labels.cpp
+    src/migration/production_function_linker.cpp
+    src/migration/production_graph_adapter.cpp
+    src/migration/production_label_registry.cpp
+    src/migration/production_migrated_package.cpp
+    src/migration/production_migration_overrides.cpp
+    src/migration/production_migration_report.cpp
+    src/migration/production_profile_registry.cpp
+    src/migration/production_project_discovery.cpp
+    src/migration/production_project_raw_load.cpp
+    tests/production_migrated_package_tests.cpp
+)
+
+target_include_directories(phoenix_production_migrated_package_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_migrated_package_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_migrated_package_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_production_migration_overrides_tests
+    src/labels.cpp
+    src/migration/production_function_linker.cpp
+    src/migration/production_graph_adapter.cpp
+    src/migration/production_label_registry.cpp
+    src/migration/production_migrated_package.cpp
+    src/migration/production_migration_overrides.cpp
+    src/migration/production_migration_report.cpp
+    src/migration/production_profile_registry.cpp
+    src/migration/production_project_discovery.cpp
+    src/migration/production_project_raw_load.cpp
+    tests/production_migration_overrides_tests.cpp
+)
+
+target_include_directories(phoenix_production_migration_overrides_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_migration_overrides_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_migration_overrides_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_production_minimal_migration_tests
+    src/labels.cpp
+    src/migration/production_function_linker.cpp
+    src/migration/production_graph_adapter.cpp
+    src/migration/production_label_registry.cpp
+    src/migration/production_migrated_package.cpp
+    src/migration/production_migration_overrides.cpp
+    src/migration/production_migration_report.cpp
+    src/migration/production_profile_registry.cpp
+    src/migration/production_project_discovery.cpp
+    src/migration/production_project_raw_load.cpp
+    tests/production_minimal_migration_tests.cpp
+)
+
+target_include_directories(phoenix_production_minimal_migration_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_minimal_migration_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_minimal_migration_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_production_migrated_package_io_tests
+    src/migration/production_migrated_package_io.cpp
+    tests/production_migrated_package_io_tests.cpp
+)
+
+target_include_directories(phoenix_production_migrated_package_io_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_migrated_package_io_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_migrated_package_io_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_migrate_project
+    src/labels.cpp
+    src/migration/migrate_project_main.cpp
+    src/migration/production_function_linker.cpp
+    src/migration/production_graph_adapter.cpp
+    src/migration/production_label_registry.cpp
+    src/migration/production_migrated_package.cpp
+    src/migration/production_migrated_package_io.cpp
+    src/migration/production_migration_overrides.cpp
+    src/migration/production_migration_report.cpp
+    src/migration/production_profile_registry.cpp
+    src/migration/production_project_discovery.cpp
+    src/migration/production_project_raw_load.cpp
+)
+
+target_include_directories(phoenix_migrate_project
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_migrate_project PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_migrate_project PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_migrate_project_cli_tests
+    tests/migrate_project_cli_tests.cpp
+)
+
+target_include_directories(phoenix_migrate_project_cli_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_migrate_project_cli_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_migrate_project_cli_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()

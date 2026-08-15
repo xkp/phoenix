@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <string>
 
 namespace {
 
@@ -100,7 +101,7 @@ bool test_unknown_reference_is_diagnostic()
         && linked.diagnostics[0].code == phoenix::LabelDiagnosticCode::unresolved_reference;
 }
 
-bool test_linker_rejects_cross_function_uid_conflict()
+bool test_linker_allows_cross_function_uid_color_difference()
 {
     phoenix::FunctionDescriptor root;
     root.id = "root";
@@ -117,9 +118,32 @@ bool test_linker_rejects_cross_function_uid_conflict()
         {"child", {{"shared", label("wall", "blue"), "child.json"}}},
     };
     const auto linked = phoenix::LabelLinker{}.link(root, functions, declarations);
+    return linked.ok() && linked.registry.frozen()
+        && linked.registry.find_uid("shared").has_value();
+}
+
+bool test_linker_rejects_cross_function_uid_material_conflict()
+{
+    phoenix::FunctionDescriptor root;
+    root.id = "root";
+    phoenix::InstructionDescriptor call;
+    call.id = 1;
+    call.called_function_id = "child";
+    root.instructions = {call};
+
+    phoenix::FunctionDescriptor child;
+    child.id = "child";
+    phoenix::LabelFunctionLibrary functions{{"child", child}};
+    phoenix::FunctionLabelDeclarations declarations{
+        {"root", {{"shared", phoenix::LabelDefinition{"wall", "red", "brick", false}, "root.json"}}},
+        {"child", {{"shared", phoenix::LabelDefinition{"wall", "blue", "wood", false}, "child.json"}}},
+    };
+    const auto linked = phoenix::LabelLinker{}.link(root, functions, declarations);
     return !linked.ok() && !linked.registry.frozen()
         && linked.diagnostics.size() == 1
-        && linked.diagnostics[0].code == phoenix::LabelDiagnosticCode::conflicting_definition;
+        && linked.diagnostics[0].code == phoenix::LabelDiagnosticCode::conflicting_definition
+        && linked.diagnostics[0].message.find("existing_name='wall'") != std::string::npos
+        && linked.diagnostics[0].message.find("incoming_name='wall'") != std::string::npos;
 }
 
 } // namespace
@@ -132,7 +156,8 @@ int main()
         && test_allocation_and_fingerprint_are_order_independent()
         && test_linker_discovers_reachable_functions_and_local_visibility()
         && test_unknown_reference_is_diagnostic()
-        && test_linker_rejects_cross_function_uid_conflict();
+        && test_linker_allows_cross_function_uid_color_difference()
+        && test_linker_rejects_cross_function_uid_material_conflict();
     if (!ok) {
         std::cerr << "label tests failed\n";
         return EXIT_FAILURE;
