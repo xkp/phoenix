@@ -38,7 +38,7 @@ bool semantically_equal(const LabelDefinition& left, const LabelDefinition& righ
 {
     return left.name == right.name
         && left.material == right.material
-        && left.hidden == right.hidden;
+        && left.style == right.style;
 }
 
 } // namespace
@@ -126,7 +126,7 @@ std::uint64_t LabelRegistry::semantic_fingerprint() const noexcept
         if (definition == nullptr) continue;
         hash_string(hash, definition->name);
         hash_string(hash, definition->material);
-        hash_byte(hash, definition->hidden ? 1U : 0U);
+        hash_string(hash, definition->style);
     }
     return hash;
 }

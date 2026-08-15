@@ -1337,6 +1337,31 @@ else()
     target_compile_options(phoenix_production_profile_registry_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(phoenix_production_repair_plan_tests
+    src/labels.cpp
+    src/migration/production_function_linker.cpp
+    src/migration/production_graph_adapter.cpp
+    src/migration/production_label_registry.cpp
+    src/migration/production_migration_overrides.cpp
+    src/migration/production_migration_report.cpp
+    src/migration/production_profile_registry.cpp
+    src/migration/production_project_discovery.cpp
+    src/migration/production_project_raw_load.cpp
+    src/migration/production_repair_plan.cpp
+    tests/production_repair_plan_tests.cpp
+)
+
+target_include_directories(phoenix_production_repair_plan_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_production_repair_plan_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_production_repair_plan_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(phoenix_production_function_linker_tests
     src/migration/production_function_linker.cpp
     src/migration/production_project_discovery.cpp
@@ -1502,6 +1527,7 @@ add_executable(phoenix_migrate_project
     src/migration/production_profile_registry.cpp
     src/migration/production_project_discovery.cpp
     src/migration/production_project_raw_load.cpp
+    src/migration/production_repair_plan.cpp
 )
 
 target_include_directories(phoenix_migrate_project

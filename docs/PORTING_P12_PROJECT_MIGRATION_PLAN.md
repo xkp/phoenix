@@ -261,12 +261,33 @@ Suggested severity model:
   suspicious
 - info: duplicate-but-identical or provenance-only observation
 
+Repair must be explicit and reproducible. The migration tool should not choose
+between conflicting production definitions silently.
+
+Missing functions have only two valid repair paths:
+
+- ignore the unresolved function calls for this migration, equivalent to
+  marking the offending production call nodes disabled and then pruning any
+  now-disabled-only subtrees
+- install/publish the missing function in the original production source
+  (`C:\prod\functions` or the equivalent deployment location) and rerun
+  migration
+
+Label and profile conflicts must present all discovered choices to the user.
+Each choice should include:
+
+- source function ID and manifest path
+- stable UID/profile ID
+- recognizable name
+- full comparable values, including fields that caused the conflict
+- count/origins where the same choice appears multiple times
+
 Repair overrides should support at least:
 
-- remap one label UID to another
-- rename unknown/private labels to a known label at a boundary
-- select one canonical definition when explicitly approved
-- rewrite stale imported function references
+- ignore unresolved function calls by referenced function ID
+- select one canonical label definition by label UID and source choice
+- select one canonical profile definition by profile ID and source choice
+- remap one label UID to another only as an explicit advanced repair
 - mark a diagnostic as accepted only when the runtime behavior remains defined
 
 Landed:
@@ -279,11 +300,20 @@ Landed:
 - report carries discovery/raw/link/label/graph intermediate outputs
 - report-level success and error/warning counts
 - focused tests in `phoenix_production_migration_report_tests`
-
-Deferred to `P12-S4`:
-
-- JSON override input
-- applying user-authored repairs before package emission
+- in-memory override hook exists for early repair experiments
+- generated repair-choice JSON reports for unresolved functions, labels, and
+  profiles
+- repair choices include source function ID, path, occurrence count, and
+  comparable values
+- label choices include production-facing `visible` for recognition, but
+  `visible` is not a semantic differentiator
+- label material/style references are enriched from sidecar label asset files
+- unresolved function repair supports `ignore_calls`, applied in memory by
+  disabling matching production function-call nodes before relinking
+- interactive CLI repair mode writes cumulative selections and rebuilds until
+  clean or no further selections are made
+- saved repair selection replay via `--repair-selection`
+- repaired reports can proceed to package emission from the CLI
 
 ### P12-P7: Package Emission
 
@@ -435,26 +465,31 @@ Landed:
 
 Status: complete
 
-Add a JSON override input and apply it before package emission.
+Add repair override input and apply it before package emission.
 
 Initial override cases:
 
-- label UID remap
-- unknown label replacement
-- stale function reference replacement
+- unresolved function call ignore
+- label definition choice
+- profile definition choice
+- advanced label UID remap
 
 Landed:
 
 - in-memory production migration override model
 - label UID remap overrides applied before label registry/report/package stages
 - function reference rewrite overrides applied before function linking
+- unresolved function ignore overrides applied by disabling matching call nodes
+- label definition choice overrides applied before label registry/report/package
+  stages
+- profile definition choice override model
 - applied override records preserved in migration reports
 - repaired reports can proceed to migrated package emission
+- generated repair-choice JSON writer
+- interactive CLI repair loop
+- saved repair selection replay with `--repair-selection`
 - focused coverage in `phoenix_production_migration_overrides_tests`
-
-Deferred:
-
-- JSON override file reader/writer
+- CLI coverage in `phoenix_migrate_project_cli_tests`
 
 ### P12-S5: Minimal Migrated Package
 
@@ -481,7 +516,7 @@ Landed:
 
 ### P12-S6: Real Project Package Attempt
 
-Status: blocked
+Status: complete
 
 Create a migrated package from a real production project before implementing a
 package loader.
@@ -498,21 +533,19 @@ Landed:
   `phoenix_migrate_project`
 - real `COUNTRY_BARN` package attempt reaches actionable diagnostics instead of
   scanning the entire shared function library
+- real `COUNTRY_BARN` repair-choice file is generated
+- interactive repair can ignore the unresolved
+  `AUX_FACE_INVERTER_2.0@429C1E50-4830-4B0F-A15F-230F4189BE0D` call and choose
+  canonical label definitions
+- saved `COUNTRY_BARN` repair selections replay non-interactively with
+  `--repair-selection`
+- repaired `COUNTRY_BARN` package emission succeeds with zero diagnostics
 
-Blocked by current diagnostics:
+Deferred:
 
-- duplicate same-ID candidates between the project folder and matching function
-  set are no longer treated as discovery errors; the function linker decides
-  whether they deduplicate or conflict by fingerprint
-- unresolved function reference
-  `AUX_FACE_INVERTER_2.0@429C1E50-4830-4B0F-A15F-230F4189BE0D`
-- conflicting label definitions for repeated zero-like label UIDs in reachable
-  functions
-
-Next decision:
-
-- define the default repair policy for project-local versus matching
-  `functions/<project-id>` duplicates before emitting a real package
+- package reader
+- package execution/runtime validation
+- geometry/material output comparison
 
 ## Fixture Candidates
 

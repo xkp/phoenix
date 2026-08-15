@@ -54,12 +54,31 @@ std::string extract_string_value(const std::string& text, const std::string& key
     return it == std::sregex_iterator{} ? std::string{} : (*it)[1].str();
 }
 
+std::vector<std::string> extract_string_array_values(const std::string& text, const std::string& key);
+
 bool extract_bool_value(const std::string& text, const std::string& key, bool default_value)
 {
     const std::regex pattern{"\"" + key + R"regex("\s*:\s*(true|false))regex"};
     const std::sregex_iterator it{text.begin(), text.end(), pattern};
     if (it == std::sregex_iterator{}) return default_value;
     return (*it)[1].str() == "true";
+}
+
+std::string first_string_value(const std::string& text, const std::vector<std::string>& keys)
+{
+    for (const auto& key : keys) {
+        const auto value = extract_string_value(text, key);
+        if (!value.empty()) return value;
+    }
+    return {};
+}
+
+bool contains_any_key(const std::string& text, const std::vector<std::string>& keys)
+{
+    for (const auto& key : keys) {
+        if (text.find("\"" + key + "\"") != std::string::npos) return true;
+    }
+    return false;
 }
 
 std::vector<std::string> extract_string_values(const std::string& text, const std::string& key)
@@ -144,6 +163,36 @@ std::vector<std::string> extract_object_texts(const std::string& text)
     return objects;
 }
 
+std::string read_text_if_exists(const std::filesystem::path& path)
+{
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return {};
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    return buffer.str();
+}
+
+std::string join_values(const std::vector<std::string>& values)
+{
+    std::string joined;
+    for (const auto& value : values) {
+        if (!joined.empty()) joined += ",";
+        joined += value;
+    }
+    return joined;
+}
+
+std::vector<std::string> extract_string_array_values(const std::string& text, const std::string& key)
+{
+    std::vector<std::string> values;
+    const auto array_text = extract_array_text(text, key);
+    const std::regex pattern{R"regex("([^"]*)")regex"};
+    for (std::sregex_iterator it{array_text.begin(), array_text.end(), pattern}, end; it != end; ++it) {
+        values.push_back((*it)[1].str());
+    }
+    return values;
+}
+
 std::vector<ProductionLabelOccurrence> extract_labels(
     const std::string& manifest_text,
     const FunctionId& function_id,
@@ -155,13 +204,25 @@ std::vector<ProductionLabelOccurrence> extract_labels(
         const auto uid = extract_string_value(object, "id");
         if (uid.empty()) continue;
         const auto visible = extract_bool_value(object, "visible", true);
+        const auto label_asset_text = read_text_if_exists(source_path.parent_path() / uid);
+        const auto material_keys = std::vector<std::string>{"material", "materialId", "materialName"};
+        const auto style_keys = std::vector<std::string>{"style", "styleId", "styleName"};
+        const auto has_inline_material = contains_any_key(object, material_keys);
+        const auto has_inline_style = contains_any_key(object, style_keys);
+        const auto material = first_string_value(object, material_keys);
+        const auto style = first_string_value(object, style_keys);
         labels.push_back(ProductionLabelOccurrence{
             uid,
             LabelDefinition{
                 extract_string_value(object, "name"),
                 extract_string_value(object, "color"),
-                extract_string_value(object, "material"),
-                !visible},
+                !has_inline_material
+                    ? first_string_value(label_asset_text, {"material", "materialId", "materialName"})
+                    : material,
+                !visible,
+                !has_inline_style
+                    ? join_values(extract_string_array_values(label_asset_text, "classes"))
+                    : style},
             function_id,
             source_path});
     }

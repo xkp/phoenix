@@ -48,13 +48,15 @@ struct LabelDefinition {
     std::string color;
     std::string material;
     bool hidden = false;
+    std::string style;
 
     friend bool operator==(const LabelDefinition& left, const LabelDefinition& right)
     {
         return left.name == right.name
             && left.color == right.color
             && left.material == right.material
-            && left.hidden == right.hidden;
+            && left.hidden == right.hidden
+            && left.style == right.style;
     }
 
     friend bool operator<(const LabelDefinition& left, const LabelDefinition& right)
@@ -62,7 +64,8 @@ struct LabelDefinition {
         if (left.name != right.name) return left.name < right.name;
         if (left.color != right.color) return left.color < right.color;
         if (left.material != right.material) return left.material < right.material;
-        return left.hidden < right.hidden;
+        if (left.hidden != right.hidden) return left.hidden < right.hidden;
+        return left.style < right.style;
     }
 };
 
