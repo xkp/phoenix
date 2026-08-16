@@ -12,12 +12,14 @@
 #include "phoenix/partition/ported/production/partition_solver_constraints.h"
 #include "phoenix/partition/ported/production/partition_solver_filters.h"
 #include "phoenix/rename/instruction.hpp"
+#include "phoenix/scripting/geometry_bindings.hpp"
 #include "phoenix/scripting/variables.hpp"
 #include "phoenix/select/instruction.hpp"
 
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -60,6 +62,10 @@ struct AdaptResult {
     {
         return AdaptResult{std::nullopt, std::move(why)};
     }
+};
+
+struct InputInstructionConfig {
+    std::optional<scripting::GeometryBindingPlan> bindings;
 };
 
 std::string port_name_suffix(const PortId& port)
@@ -712,6 +718,11 @@ scripting::ExpressionSpec migrated_expression(
     return spec;
 }
 
+std::string legacy_expression_source(std::string source)
+{
+    return std::regex_replace(source, std::regex(R"(\[([A-Za-z_][A-Za-z0-9_]*)\])"), "$1");
+}
+
 scripting::VariablePlan migrated_variable_plan(
     const MigratedFunctionPackage& function,
     const std::string& node_data)
@@ -790,6 +801,94 @@ std::optional<scripting::GeometryBindingPlan> geometry_bindings_for(
     return plan.bindings.empty()
         ? std::nullopt
         : std::optional<scripting::GeometryBindingPlan>{std::move(plan)};
+}
+
+bool matches_label(LabelId value, const std::optional<LabelId>& expected)
+{
+    return !expected.has_value() || value == *expected;
+}
+
+double halfedge_length(const CanonicalGeometry& geometry, GeometryIndex halfedge)
+{
+    const auto& edge = geometry.halfedges().at(halfedge);
+    const auto& next = geometry.halfedges().at(edge.next);
+    const auto& source = geometry.vertices().at(edge.origin_vertex).point;
+    const auto& target = geometry.vertices().at(next.origin_vertex).point;
+    return std::hypot(std::hypot(target.x - source.x, target.y - source.y), target.z - source.z);
+}
+
+scripting::Bindings evaluate_input_bindings_for_geometry(
+    const CanonicalGeometry& geometry,
+    const scripting::GeometryBindingPlan& plan,
+    SeedValue seed)
+{
+    scripting::Bindings result;
+    for (const auto& binding : plan.bindings) {
+        if (binding.kind == scripting::GeometryBindingKind::count_edge_labels) {
+            std::int64_t count = 0;
+            for (const auto& halfedge : geometry.halfedges()) {
+                if (matches_label(halfedge.label, binding.label1)) ++count;
+            }
+            result[binding.variable] = count;
+        } else if (binding.kind == scripting::GeometryBindingKind::count_face_labels) {
+            std::int64_t count = 0;
+            for (const auto& face : geometry.faces()) {
+                if (matches_label(face.label, binding.label1)) ++count;
+            }
+            result[binding.variable] = count;
+        } else if (binding.kind == scripting::GeometryBindingKind::length) {
+            std::vector<double> values;
+            for (GeometryIndex edge = 0; edge < geometry.halfedges().size(); ++edge) {
+                if (matches_label(geometry.halfedges()[edge].label, binding.label1)) {
+                    values.push_back(halfedge_length(geometry, edge));
+                }
+            }
+            if (values.empty()) {
+                result[binding.variable] = 0.0;
+            } else if (binding.choice == scripting::BindingChoice::largest) {
+                result[binding.variable] = *std::max_element(values.begin(), values.end());
+            } else if (binding.choice == scripting::BindingChoice::shortest) {
+                result[binding.variable] = *std::min_element(values.begin(), values.end());
+            } else {
+                std::sort(values.begin(), values.end());
+                values.erase(std::unique(values.begin(), values.end()), values.end());
+                result[binding.variable] = values[static_cast<std::size_t>(seed % values.size())];
+            }
+        }
+    }
+    return result;
+}
+
+void merge_input_bindings(
+    const RuntimeValue& value,
+    const scripting::GeometryBindingPlan& plan,
+    SeedValue seed,
+    scripting::Bindings& variables)
+{
+    auto merge = [&](const CanonicalGeometryRef& geometry) {
+        if (!geometry) return;
+        const auto bindings = evaluate_input_bindings_for_geometry(*geometry, plan, seed);
+        for (const auto& binding : bindings) {
+            variables[binding.first] = binding.second;
+        }
+    };
+    if (const auto* geometry = value.as_geometry()) {
+        merge(geometry->geometry);
+    } else if (const auto* collection = value.as_geometry_collection()) {
+        for (const auto& contribution : collection->contributions) {
+            merge(contribution.geometry);
+        }
+    }
+}
+
+std::optional<InputInstructionConfig> adapt_input(
+    const LoadedMigratedPackage& package,
+    const std::string& node_data)
+{
+    InputInstructionConfig config;
+    config.bindings = geometry_bindings_for(package, node_data);
+    if (!config.bindings && json_array_has_values(node_data, "bindings")) return std::nullopt;
+    return config;
 }
 
 std::optional<control::IfInstructionConfig> adapt_if(
@@ -1762,17 +1861,30 @@ std::optional<loop::InstructionConfig> adapt_loop(
         }
     }
 
-    const auto count = json_number_or_variable(function, node_data, "count");
-    if (!count.has_value()) return std::nullopt;
-
     loop::InstructionConfig config;
     config.geometry_input_port = std::move(input);
     config.geometry_output_port = std::move(output);
-    config.options.count = static_cast<std::int64_t>(*count);
-    config.options.range = static_cast<std::int64_t>(
-        json_number_or_variable(function, node_data, "range").value_or(-1.0));
-    config.options.step = static_cast<std::int64_t>(
-        json_number_or_variable(function, node_data, "step").value_or(-1.0));
+    if (const auto count = json_number_or_variable(function, node_data, "count")) {
+        config.options.count = static_cast<std::int64_t>(*count);
+    } else if (auto raw = json_string(node_data, "count"); raw.has_value() && !raw->empty()) {
+        config.count_expression = migrated_expression(legacy_expression_source(std::move(*raw)), function);
+    } else {
+        return std::nullopt;
+    }
+    if (const auto range = json_number_or_variable(function, node_data, "range")) {
+        config.options.range = static_cast<std::int64_t>(*range);
+    } else if (auto raw = json_string(node_data, "range"); raw.has_value() && !raw->empty()) {
+        config.range_expression = migrated_expression(legacy_expression_source(std::move(*raw)), function);
+    } else {
+        config.options.range = -1;
+    }
+    if (const auto step = json_number_or_variable(function, node_data, "step")) {
+        config.options.step = static_cast<std::int64_t>(*step);
+    } else if (auto raw = json_string(node_data, "step"); raw.has_value() && !raw->empty()) {
+        config.step_expression = migrated_expression(legacy_expression_source(std::move(*raw)), function);
+    } else {
+        config.options.step = -1;
+    }
     config.body.function = &function.graph;
     config.body.ports.input = *body_input;
     if (auto feedback = find_output_port_named(instruction, "loop")) {
@@ -1962,6 +2074,53 @@ void register_loop_handlers(
     result.supported_kinds.insert("loop");
 }
 
+void register_input_handlers(
+    MigratedInstructionRegistryResult& result,
+    const std::map<InstructionKey, InputInstructionConfig>& configs)
+{
+    if (configs.empty()) return;
+
+    result.registry.register_handler(
+        "input",
+        [configs](const InstructionExecutionFrame& frame) {
+            InstructionResult result;
+            result.node_id = frame.inputs.node_id;
+            const auto it = configs.find(InstructionKey{
+                frame.context.function_id,
+                frame.inputs.node_id,
+            });
+            if (it == configs.end()) {
+                result.failure_message = "Migrated input instruction has no decoded config.";
+                return result;
+            }
+            for (const auto& input : frame.inputs.promised_inputs) {
+                result.produced_outputs.push_back(input);
+            }
+            return result;
+        });
+    result.registry.register_function_variable_provider(
+        [configs](
+            const FunctionDescriptor& function,
+            const std::vector<PortValue>& inputs,
+            SeedValue seed,
+            scripting::Bindings& variables) -> std::optional<std::string> {
+            for (const auto& instruction : function.instructions) {
+                if (instruction.kind != "input") continue;
+                const auto config = configs.find(InstructionKey{function.id, instruction.id});
+                if (config == configs.end() || !config->second.bindings) continue;
+                for (const auto& port : instruction.input_ports) {
+                    for (const auto& input : inputs) {
+                        if (input.port == port.id) {
+                            merge_input_bindings(input.value, *config->second.bindings, seed, variables);
+                        }
+                    }
+                }
+            }
+            return std::nullopt;
+        });
+    result.supported_kinds.insert("input");
+}
+
 void register_inset_handlers(
     MigratedInstructionRegistryResult& result,
     const std::map<InstructionKey, inset::InstructionConfig>& configs)
@@ -2115,6 +2274,7 @@ MigratedInstructionRegistryResult make_migrated_instruction_registry(
     std::map<InstructionKey, control::CaseInstructionConfig> case_configs;
     std::map<InstructionKey, control::ChoiceInstructionConfig> choice_configs;
     std::map<InstructionKey, control::IfInstructionConfig> if_configs;
+    std::map<InstructionKey, InputInstructionConfig> input_configs;
     std::map<InstructionKey, inset::InstructionConfig> inset_configs;
     std::map<InstructionKey, control::LodInstructionConfig> lod_configs;
     std::map<InstructionKey, extrusion::InstructionConfig> extrusion_configs;
@@ -2170,6 +2330,17 @@ MigratedInstructionRegistryResult make_migrated_instruction_registry(
                     instruction,
                     node_data_for(entry.second, instruction.id))) {
                     choice_configs.emplace(
+                        InstructionKey{entry.first, instruction.id},
+                        std::move(*config));
+                    ++result.adapted_by_kind[instruction.kind];
+                    continue;
+                }
+            }
+            if (instruction.kind == "input") {
+                if (auto config = adapt_input(
+                    package,
+                    node_data_for(entry.second, instruction.id))) {
+                    input_configs.emplace(
                         InstructionKey{entry.first, instruction.id},
                         std::move(*config));
                     ++result.adapted_by_kind[instruction.kind];
@@ -2287,6 +2458,7 @@ MigratedInstructionRegistryResult make_migrated_instruction_registry(
     register_case_handlers(result, case_configs);
     register_choice_handlers(result, choice_configs);
     register_if_handlers(result, if_configs);
+    register_input_handlers(result, input_configs);
     register_inset_handlers(result, inset_configs);
     register_lod_handlers(result, lod_configs);
     register_loop_handlers(result, loop_configs);
@@ -2295,6 +2467,24 @@ MigratedInstructionRegistryResult make_migrated_instruction_registry(
     register_partition_handlers(result, partition_configs);
     register_rename_handlers(result, rename_configs);
     register_select_handlers(result, select_configs);
+
+    std::map<FunctionId, std::map<std::string, double>> static_variables;
+    for (const auto& entry : package.functions) {
+        static_variables.emplace(entry.first, entry.second.numeric_variables);
+    }
+    result.registry.register_function_variable_provider(
+        [static_variables = std::move(static_variables)](
+            const FunctionDescriptor& function,
+            const std::vector<PortValue>&,
+            SeedValue,
+            scripting::Bindings& variables) -> std::optional<std::string> {
+            const auto found = static_variables.find(function.id);
+            if (found == static_variables.end()) return std::nullopt;
+            for (const auto& variable : found->second) {
+                variables.emplace(variable.first, variable.second);
+            }
+            return std::nullopt;
+        });
 
     for (const auto& kind : result.unsupported_kinds) {
         if (result.supported_kinds.find(kind) == result.supported_kinds.end()) {

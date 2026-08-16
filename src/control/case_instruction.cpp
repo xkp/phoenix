@@ -69,6 +69,7 @@ InstructionHandler make_case_instruction_handler(CaseInstructionConfig config)
             return result;
         }
         scripting::Bindings bindings;
+        if (frame.function_variables) bindings = *frame.function_variables;
         for (const auto& candidate : frame.inputs.promised_inputs) {
             if (candidate.port == config.input_port) continue;
             if (const auto value = scalar(candidate.value)) bindings[candidate.port] = *value;

@@ -6,6 +6,7 @@
 #include "phoenix/graph.hpp"
 #include "phoenix/randomness.hpp"
 #include "phoenix/publication.hpp"
+#include "phoenix/scripting/contract.hpp"
 #include "phoenix/values.hpp"
 
 #include <cstddef>
@@ -105,6 +106,7 @@ struct InstructionExecutionFrame {
     std::optional<SeedValue> effective_seed;
     MultiplexSeedMode multiplex_seed_mode = MultiplexSeedMode::one_seed_for_all;
     RunElementIdAllocator* element_ids = nullptr;
+    const scripting::Bindings* function_variables = nullptr;
     std::size_t worker_count = 1;
 
     [[nodiscard]] SeedValue derive_item_seed(std::uint64_t item_key) const noexcept;
@@ -120,15 +122,27 @@ struct NodeRuntimeState {
 };
 
 using InstructionHandler = std::function<InstructionResult(const InstructionExecutionFrame&)>;
+using FunctionVariableProvider = std::function<std::optional<std::string>(
+    const FunctionDescriptor& function,
+    const std::vector<PortValue>& inputs,
+    SeedValue seed,
+    scripting::Bindings& variables)>;
 
 class InstructionRegistry {
 public:
     void register_handler(std::string kind, InstructionHandler handler);
+    void register_function_variable_provider(FunctionVariableProvider provider);
 
     [[nodiscard]] const InstructionHandler* find_handler(const std::string& kind) const noexcept;
+    [[nodiscard]] std::optional<std::string> prepare_function_variables(
+        const FunctionDescriptor& function,
+        const std::vector<PortValue>& inputs,
+        SeedValue seed,
+        scripting::Bindings& variables) const;
 
 private:
     std::unordered_map<std::string, InstructionHandler> handlers_;
+    std::vector<FunctionVariableProvider> function_variable_providers_;
 };
 
 class FunctionLibrary {
@@ -246,6 +260,7 @@ struct FunctionExecutionRequest {
     std::optional<std::size_t> parent_scope_index;
     GeometryPublicationLedger* publication_ledger = nullptr;
     RunElementIdAllocator* element_ids = nullptr;
+    const scripting::Bindings* function_variables = nullptr;
     std::uint64_t label_registry_fingerprint = 0;
     std::string kernel_version;
     std::string adapter_version;

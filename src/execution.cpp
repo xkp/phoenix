@@ -1044,6 +1044,7 @@ InstructionExecutionFrame make_execution_frame(
     frame.effective_seed = seed_deriver.derive(seed_input);
     frame.multiplex_seed_mode = instruction.multiplex_seed_mode;
     frame.element_ids = request.element_ids;
+    frame.function_variables = request.function_variables;
     frame.worker_count = request.options.worker_count;
     return frame;
 }
@@ -1863,6 +1864,11 @@ void InstructionRegistry::register_handler(std::string kind, InstructionHandler 
     handlers_[std::move(kind)] = std::move(handler);
 }
 
+void InstructionRegistry::register_function_variable_provider(FunctionVariableProvider provider)
+{
+    function_variable_providers_.push_back(std::move(provider));
+}
+
 const InstructionHandler* InstructionRegistry::find_handler(const std::string& kind) const noexcept
 {
     const auto it = handlers_.find(kind);
@@ -1871,6 +1877,18 @@ const InstructionHandler* InstructionRegistry::find_handler(const std::string& k
     }
 
     return &it->second;
+}
+
+std::optional<std::string> InstructionRegistry::prepare_function_variables(
+    const FunctionDescriptor& function,
+    const std::vector<PortValue>& inputs,
+    SeedValue seed,
+    scripting::Bindings& variables) const
+{
+    for (const auto& provider : function_variable_providers_) {
+        if (auto failure = provider(function, inputs, seed, variables)) return failure;
+    }
+    return std::nullopt;
 }
 
 void FunctionLibrary::register_function(const FunctionDescriptor& function)
@@ -1923,6 +1941,7 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
 {
     RunElementIdAllocator local_element_ids;
     FunctionExecutionRequest request_storage = request_;
+    scripting::Bindings local_function_variables;
     if (request_storage.element_ids == nullptr) {
         auto reserve_geometry_ids = [&](const CanonicalGeometryRef& geometry) {
             if (!geometry) return;
@@ -1955,6 +1974,20 @@ FunctionExecutionResult FunctionExecutor::run(const FunctionExecutionRequest& re
     }
 
     const auto& function = *request.function;
+    if (request_storage.function_variables == nullptr) {
+        if (registry_ != nullptr) {
+            if (auto failure = registry_->prepare_function_variables(
+                    function,
+                    request_storage.inputs,
+                    request_storage.context.global_seed,
+                    local_function_variables)) {
+                execution_result.status = FunctionExecutionStatus::failed;
+                execution_result.failure_message = std::move(*failure);
+                return execution_result;
+            }
+        }
+        request_storage.function_variables = &local_function_variables;
+    }
     const GraphIndex index(function);
     const auto shape_error = validate_execution_shape(function, index);
     if (shape_error.has_value()) {
