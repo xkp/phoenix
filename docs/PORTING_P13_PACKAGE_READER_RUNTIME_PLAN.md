@@ -100,7 +100,7 @@ Landed:
 
 ## P13-P4: COUNTRY_BARN Runtime Attempt
 
-Status: in progress
+Status: complete
 
 Use the saved COUNTRY_BARN repair selection file to migrate, read, load, and
 attempt runtime execution.
@@ -165,33 +165,39 @@ Landed:
 - migrated `partition` adapter loads preserved production partition payloads
   (`baseCurves`, `cutHelpers`, common constraints, labels, and repeat metadata)
   into the existing ported partition solver/runtime handler
+- migrated `case`, `choice`, `if`, `inset`, `loop`, `instance`, and
+  `smooth(method=subdivision)` instructions are wired into the migrated runtime
+  path
+- production-style numeric literals, ranges, steps, variable references, and
+  expressions are evaluated through the centralized Phoenix numeric-value
+  adapter for migrated instruction fields
+- `smooth(method=hardEdges)` is recognized as a known smooth node and reports a
+  precise runtime unsupported diagnostic until the hard-edge kernel is ported
 - focused CLI test covers the missing-handler diagnostic contract
 
-Current expected result:
+Verified:
 
-- COUNTRY_BARN loads, but runtime attempt is blocked until the remaining
-  migrated instruction payload adapters are implemented
+- `phoenix_run_migrated_package.exe
+  build\windows-default\COUNTRY_BARN_retired_test.phxmig` reports
+  `runtime_attempt: ok`
+- `phoenix_instance_instruction_tests.exe` passes
+- `phoenix_smooth_instruction_tests.exe` passes, including the hard-edge
+  runtime-unsupported case
 
-COUNTRY_BARN current missing handler kinds:
+Remaining scope:
 
-- case
-- choice
-- extrusion
-- if
-- inset
-- loop
+- output count is currently `0`; the smoke proves the migrated package can load
+  and execute without runtime blockage, not that it emits a production-equivalent
+  scene
+- full geometry, label, material, style, and actor-tree equivalence are owned by
+  P14
+- `smooth(method=hardEdges)` remains a known unsupported runtime behavior
+- overlay remains out of scope
 
-`rename` remains listed because COUNTRY_BARN includes production
-`renameEdgeByExpression` nodes with `edgeAdjacentBinding`; those need the
-binding/expression compatibility layer before they can execute faithfully.
+## P13 Handoff To P14
 
-Current partial adapter coverage reported by `phoenix_run_migrated_package`:
+Status: complete
 
-- extrusion: 73 / 74 graph instructions adapted before retired-method package
-  rejection
-- partition: 47 / 47 graph instructions adapted
-- rename: 81 / 81 graph instructions adapted
-
-`extrusion` remains listed only for the retired production label-driven profile
-method. Current policy is to fail migration/package emission for that case
-instead of emulating it in Phoenix.
+P13 ends once migrated packages can be read, normalized, loaded, and executed
+through Phoenix without missing-handler blockage. P14 starts from that runnable
+state and proves production equivalence.

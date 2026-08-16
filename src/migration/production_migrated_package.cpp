@@ -396,6 +396,7 @@ void append_retired_instruction_method_diagnostics(
     for (const auto& entry : report.linked_functions.functions) {
         const auto raw_nodes = extract_array_text(entry.second.function.nodes_text, "nodes");
         for (const auto& object : extract_object_texts(raw_nodes)) {
+            if (extract_bool_value(object, "disabled")) continue;
             if (extract_string_value(object, "typeName") != "extrusion") continue;
             const auto data = extract_object_field(object, "data");
             if (extract_string_value(data, "method") != "label") continue;

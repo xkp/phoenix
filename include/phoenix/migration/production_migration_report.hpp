@@ -24,6 +24,7 @@ struct MigrationDiagnostic {
     std::filesystem::path path;
     FunctionId function_id;
     LabelUid label_uid;
+    NodeId node_id = 0;
 };
 
 struct ProductionMigrationReport {

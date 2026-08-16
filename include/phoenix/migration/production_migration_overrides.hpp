@@ -22,6 +22,11 @@ struct IgnoredFunctionReferenceOverride {
     FunctionId function_id;
 };
 
+struct IgnoredInstructionOverride {
+    FunctionId function_id;
+    NodeId node_id = 0;
+};
+
 struct LabelDefinitionChoiceOverride {
     LabelUid uid;
     FunctionId target_function_id;
@@ -37,6 +42,7 @@ struct ProductionMigrationOverrides {
     std::vector<LabelUidRemapOverride> label_uid_remaps;
     std::vector<FunctionReferenceRewriteOverride> function_reference_rewrites;
     std::vector<IgnoredFunctionReferenceOverride> ignored_function_references;
+    std::vector<IgnoredInstructionOverride> ignored_instructions;
     std::vector<LabelDefinitionChoiceOverride> label_definition_choices;
     std::vector<ProfileDefinitionChoiceOverride> profile_definition_choices;
 };

@@ -49,7 +49,10 @@ pin actual production results before Phoenix defines generated edge labels.
 The production hard-edge rounding path is not production-ready. It is excluded
 from the compatibility port and deferred to post-port evaluation, like overlay.
 Its presence behind the legacy `smooth` command does not make it part of the
-required OpenSubdiv subdivision implementation.
+required OpenSubdiv subdivision implementation. P12/P13 migration should still
+recognize `smooth(method=hardEdges)` and load the node as an explicit runtime
+unsupported smooth instruction, not silently drop it or treat it as an unknown
+kind.
 
 If retained later, it should be exposed as an independent round-edge/bevel
 kernel with a legacy persistence adapter for `smooth(method=hardEdges)`, rather

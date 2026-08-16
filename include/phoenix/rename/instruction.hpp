@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phoenix/execution.hpp"
+#include "phoenix/scripting/numeric_value.hpp"
 
 #include <cstdint>
 #include <limits>
@@ -28,8 +29,9 @@ struct Condition {
     AdjacentRelation adjacent_relation = AdjacentRelation::any;
     std::optional<bool> border;
     std::optional<std::size_t> maximum_edge_count;
-    double minimum_length = 0.0;
-    double maximum_length = std::numeric_limits<double>::max();
+    scripting::NumericValue minimum_length = scripting::numeric_literal(0.0);
+    scripting::NumericValue maximum_length =
+        scripting::numeric_literal(std::numeric_limits<double>::max());
     LengthKind length_kind = LengthKind::none;
 };
 

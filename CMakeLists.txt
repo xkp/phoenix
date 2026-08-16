@@ -285,13 +285,28 @@ add_executable(phoenix_instance_instruction_tests
     src/labels.cpp
     src/publication.cpp
     src/randomness.cpp
+    src/scripting/contract.cpp
+    src/scripting/expression.cpp
+    src/scripting/geometry_bindings.cpp
+    src/scripting/geometry_session.cpp
+    src/scripting/intersections3.cpp
+    src/scripting/numeric_value.cpp
+    src/scripting/primitives3.cpp
+    src/scripting/quickjs_engine.cpp
+    src/scripting/variables.cpp
     src/values.cpp
+    src/working_geometry.cpp
+    src/working_geometry_builder.cpp
     src/instance/placement.cpp
     src/instance/instruction.cpp
     tests/instance_instruction_tests.cpp
 )
 target_include_directories(phoenix_instance_instruction_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(phoenix_instance_instruction_tests PRIVATE
+    qjs
+    CGAL::CGAL
 )
 if(MSVC)
     target_compile_options(phoenix_instance_instruction_tests PRIVATE /W4 /permissive-)
@@ -647,6 +662,15 @@ add_executable(phoenix_smooth_instruction_tests
     src/publication.cpp
     src/randomness.cpp
     src/scene_update.cpp
+    src/scripting/contract.cpp
+    src/scripting/expression.cpp
+    src/scripting/geometry_bindings.cpp
+    src/scripting/geometry_session.cpp
+    src/scripting/intersections3.cpp
+    src/scripting/numeric_value.cpp
+    src/scripting/primitives3.cpp
+    src/scripting/quickjs_engine.cpp
+    src/scripting/variables.cpp
     src/values.cpp
     src/working_geometry.cpp
     src/working_geometry_builder.cpp
@@ -658,7 +682,9 @@ target_include_directories(phoenix_smooth_instruction_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 target_link_libraries(phoenix_smooth_instruction_tests PRIVATE
-    CGAL::CGAL OpenSubdiv::osdCPU_static
+    qjs
+    CGAL::CGAL
+    OpenSubdiv::osdCPU_static
 )
 if(MSVC)
     target_compile_definitions(phoenix_smooth_instruction_tests PRIVATE _USE_MATH_DEFINES)
@@ -1592,6 +1618,8 @@ add_executable(phoenix_run_migrated_package
     src/inset/instruction.cpp
     src/inset/production_adapter.cpp
     src/inset/ported/production/inset.cpp
+    src/instance/instruction.cpp
+    src/instance/placement.cpp
     src/loop/function_body.cpp
     src/loop/geometry_transaction.cpp
     src/loop/instruction.cpp
@@ -1614,10 +1642,13 @@ add_executable(phoenix_run_migrated_package
     src/scripting/geometry_session.cpp
     src/scripting/intersections3.cpp
     src/scripting/invocation_host.cpp
+    src/scripting/numeric_value.cpp
     src/scripting/primitives3.cpp
     src/scripting/quickjs_engine.cpp
     src/scripting/variables.cpp
     src/select/instruction.cpp
+    src/smooth/instruction.cpp
+    src/smooth/subdivision.cpp
     src/values.cpp
     src/working_geometry.cpp
     src/working_geometry_builder.cpp
@@ -1630,9 +1661,14 @@ target_include_directories(phoenix_run_migrated_package
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(phoenix_run_migrated_package PRIVATE qjs CGAL::CGAL)
+target_link_libraries(phoenix_run_migrated_package PRIVATE
+    qjs
+    CGAL::CGAL
+    OpenSubdiv::osdCPU_static
+)
 
 if(MSVC)
+    target_compile_definitions(phoenix_run_migrated_package PRIVATE _USE_MATH_DEFINES)
     target_compile_options(phoenix_run_migrated_package PRIVATE
         /W4 /permissive /Zc:strictStrings- /Zc:twoPhase- /bigobj
         "/FI${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production_probe_compat.hpp")

@@ -36,12 +36,21 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
             result.failure_message = "Inset requires the run-scoped element ID allocator.";
             return result;
         }
+        const auto amount = scripting::evaluate_numeric_range(config.amount, frame);
+        if (amount.error) {
+            result.failure_message = *amount.error;
+            return result;
+        }
+        if (amount.value <= 0.0) {
+            result.failure_message = "Inset amount must be greater than zero.";
+            return result;
+        }
         const auto actor = owner(frame, *input);
         std::vector<GeometryValue> outputs;
         for (GeometryIndex face = 0; face < input->geometry->faces().size(); ++face) {
             ProductionInsetRequest request;
             request.source = {input->geometry, face, input->geometry->faces()[face].id};
-            request.amount = config.amount;
+            request.amount = amount.value;
             request.labels = config.labels;
             const auto inset = run_production_inset(request, *frame.element_ids);
             auto effect = inset.publication_effect(face, actor);

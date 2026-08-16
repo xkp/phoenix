@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phoenix/execution.hpp"
+#include "phoenix/scripting/numeric_value.hpp"
 
 #include <cstdint>
 #include <limits>
@@ -21,14 +22,16 @@ struct FaceCondition {
     std::optional<LabelId> opposite_face_label;
     std::optional<LabelId> opposite_edge_label;
     bool require_border_edge = false;
-    double minimum_edge_length = 0.0;
-    double maximum_edge_length = std::numeric_limits<double>::max();
+    scripting::NumericValue minimum_edge_length = scripting::numeric_literal(0.0);
+    scripting::NumericValue maximum_edge_length =
+        scripting::numeric_literal(std::numeric_limits<double>::max());
 };
 
 struct Limit {
-    std::int64_t count = -1;
-    std::int64_t random_range = -1;
-    std::int64_t random_step = 1;
+    scripting::NumericRange count = {
+        scripting::numeric_literal(-1.0),
+        std::nullopt,
+        std::nullopt};
     bool percentage = false;
     std::uint64_t seed = 0;
 };

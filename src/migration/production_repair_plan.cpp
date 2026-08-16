@@ -151,6 +151,41 @@ void append_unresolved_function_repairs(
     }
 }
 
+void append_retired_instruction_repairs(
+    ProductionRepairPlan& plan,
+    const ProductionMigrationReport& report)
+{
+    for (const auto& diagnostic : report.diagnostics) {
+        if (diagnostic.code != "instructions.retired_label_method"
+            || diagnostic.function_id.empty()
+            || diagnostic.node_id == 0) {
+            continue;
+        }
+        plan.items.push_back(ProductionRepairItem{
+            "instruction:" + diagnostic.function_id + ":" + std::to_string(diagnostic.node_id),
+            diagnostic.code,
+            diagnostic.function_id,
+            std::to_string(diagnostic.node_id),
+            "Retired production instruction. Ignore it for this migration, equivalent to disabling that production node and pruning disabled-only branches.",
+            {
+                ProductionRepairChoice{
+                    "ignore_instruction",
+                    "Ignore this instruction, equivalent to disabling the production node.",
+                    diagnostic.function_id,
+                    diagnostic.path,
+                    R"({"action":"ignore_instruction"})",
+                    1},
+                ProductionRepairChoice{
+                    "edit_source_and_rerun",
+                    "Edit/replace the retired instruction in production, then rerun migration.",
+                    diagnostic.function_id,
+                    diagnostic.path,
+                    R"({"action":"edit_source_and_rerun"})",
+                    0},
+            }});
+    }
+}
+
 void append_label_repairs(
     ProductionRepairPlan& plan,
     const ProductionMigrationReport& report)
@@ -213,6 +248,7 @@ ProductionRepairPlan ProductionRepairPlanBuilder::build(
 {
     ProductionRepairPlan plan;
     append_unresolved_function_repairs(plan, report);
+    append_retired_instruction_repairs(plan, report);
     append_label_repairs(plan, report);
     append_profile_repairs(plan, report);
     return plan;

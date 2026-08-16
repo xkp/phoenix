@@ -87,8 +87,16 @@ bool base_edge_match(const std::vector<RuntimeFace>& faces,
     return true;
 }
 
+struct EvaluatedCondition {
+    Condition source;
+    double minimum_length = 0.0;
+    double maximum_length = std::numeric_limits<double>::max();
+};
+
 CanonicalGeometryRef renamed(const CanonicalGeometry& source,
-    const InstructionConfig& config, std::uint64_t effective_seed)
+    const InstructionConfig& config,
+    const std::vector<EvaluatedCondition>& conditions,
+    std::uint64_t effective_seed)
 {
     auto vertices = source.vertices();
     auto edges = source.halfedges();
@@ -101,13 +109,14 @@ CanonicalGeometryRef renamed(const CanonicalGeometry& source,
         std::uniform_int_distribution<std::size_t> choose(0, found->second.size()-1);
         return found->second[choose(random)];
     };
-    if (config.conditions.empty()) {
+    if (conditions.empty()) {
         for (auto& face : faces) face.label = mapped(face.label, config.all_faces_label);
         for (auto& edge : edges) edge.label = mapped(edge.label, config.all_edges_label);
     } else {
         std::vector<std::optional<LabelId>> face_changes(faces.size());
         std::vector<std::optional<LabelId>> edge_changes(edges.size());
-        for (const auto& condition : config.conditions) {
+        for (const auto& evaluated : conditions) {
+            const auto& condition = evaluated.source;
             for (GeometryIndex face_index = 0; face_index < faces.size(); ++face_index) {
                 const auto boundary = face_edges(faces, edges, face_index);
                 if (condition.maximum_edge_count
@@ -119,8 +128,8 @@ CanonicalGeometryRef renamed(const CanonicalGeometry& source,
                     for (const auto edge : boundary) {
                         if (!base_edge_match(faces, edges, edge, condition)) continue;
                         const auto value = length(vertices, edges, edge);
-                        if (value >= condition.minimum_length
-                            && value <= condition.maximum_length) matching.push_back(edge);
+                        if (value >= evaluated.minimum_length
+                            && value <= evaluated.maximum_length) matching.push_back(edge);
                     }
                     if (condition.length_kind == LengthKind::largest
                         || condition.length_kind == LengthKind::smallest) {
@@ -142,8 +151,8 @@ CanonicalGeometryRef renamed(const CanonicalGeometry& source,
                     for (const auto edge_index : boundary) {
                         if (!base_edge_match(faces, edges, edge_index, condition)) continue;
                         const auto value = length(vertices, edges, edge_index);
-                        if (value < condition.minimum_length
-                            || value > condition.maximum_length) continue;
+                        if (value < evaluated.minimum_length
+                            || value > evaluated.maximum_length) continue;
                         if (condition.length_kind == LengthKind::largest
                             || condition.length_kind == LengthKind::smallest) {
                             const auto chosen = std::minmax_element(boundary.begin(), boundary.end(),
@@ -182,11 +191,30 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
         } else if (const auto* collection = value->as_geometry_collection()) {
             inputs = collection->contributions;
         }
+        std::vector<EvaluatedCondition> conditions;
+        conditions.reserve(config.conditions.size());
+        for (const auto& condition : config.conditions) {
+            auto minimum = scripting::evaluate_numeric(condition.minimum_length, frame);
+            if (minimum.error) {
+                result.failure_message = *minimum.error;
+                return result;
+            }
+            auto maximum = scripting::evaluate_numeric(condition.maximum_length, frame);
+            if (maximum.error) {
+                result.failure_message = *maximum.error;
+                return result;
+            }
+            conditions.push_back(EvaluatedCondition{
+                condition,
+                minimum.value,
+                maximum.value});
+        }
         std::vector<GeometryValue> outputs;
         std::uint64_t item = 0;
         for (const auto& input : inputs) {
             if (!input.geometry) continue;
             auto geometry = renamed(*input.geometry, config,
+                conditions,
                 frame.effective_seed.value_or(frame.context.global_seed) ^ item++);
             if (!geometry) { result.failure_message = "Rename produced invalid geometry."; return result; }
             outputs.push_back({"rename", input.accumulation_actor_id, std::move(geometry)});

@@ -1,10 +1,15 @@
 #include "phoenix/extrusion/instruction.hpp"
 
+#include <CGAL/enum.h>
+
 #include <chrono>
+#include <cmath>
 #include <utility>
 
 namespace phoenix::extrusion {
 namespace {
+
+constexpr double pi = 3.14159265358979323846;
 
 const RuntimeValue* find_input(const InstructionExecutionFrame& frame, const PortId& port)
 {
@@ -35,6 +40,88 @@ InstructionFailure item_failure(
         frame.call_stack};
 }
 
+std::optional<ProfileRef> evaluate_profile(
+    const InstructionConfig& config,
+    const InstructionExecutionFrame& frame,
+    std::string& error)
+{
+    if (config.runtime_profile.empty()) return config.profile;
+    std::vector<ProfileSegment> segments;
+    segments.reserve(config.runtime_profile.size());
+    CGAL::Sign sign = CGAL::ZERO;
+    for (const auto& source : config.runtime_profile) {
+        auto x = scripting::evaluate_numeric_range(source.delta_x, frame);
+        if (x.error) {
+            error = *x.error;
+            return std::nullopt;
+        }
+        auto y = scripting::evaluate_numeric_range(source.delta_y, frame);
+        if (y.error) {
+            error = *y.error;
+            return std::nullopt;
+        }
+        ProfileSegment segment;
+        segment.delta_x = x.value;
+        segment.delta_y = y.value;
+        auto optional = [&](const std::optional<scripting::NumericRange>& value)
+            -> std::optional<double> {
+            if (!value) return std::nullopt;
+            auto evaluated = scripting::evaluate_numeric_range(*value, frame);
+            if (evaluated.error) {
+                error = *evaluated.error;
+                return std::nullopt;
+            }
+            return evaluated.value;
+        };
+        const auto height = optional(source.height);
+        if (!error.empty()) return std::nullopt;
+        const auto width = optional(source.width);
+        if (!error.empty()) return std::nullopt;
+        const auto length = optional(source.length);
+        if (!error.empty()) return std::nullopt;
+        const auto angle = optional(source.angle_degrees);
+        if (!error.empty()) return std::nullopt;
+        const auto xsign = segment.delta_x < 0.0 ? -1.0 : 1.0;
+        const auto ysign = segment.delta_y < 0.0 ? -1.0 : 1.0;
+        if (height && width) {
+            segment.delta_x = xsign * *width;
+            segment.delta_y = ysign * *height;
+        } else if (height && angle) {
+            if (*angle < 0.0 || *angle > 90.0) {
+                error = "Profile angle must be in [0, 90].";
+                return std::nullopt;
+            }
+            const auto tangent = std::tan(*angle * pi / 180.0);
+            segment.delta_x = tangent == 0.0 ? segment.delta_x : xsign * *height / tangent;
+            segment.delta_y = ysign * *height;
+        } else if (width && length) {
+            if (*length < *width) {
+                error = "Profile length must be greater than or equal to width.";
+                return std::nullopt;
+            }
+            segment.delta_x = xsign * *width;
+            segment.delta_y = ysign * std::sqrt(*length * *length - *width * *width);
+        } else if (angle && length) {
+            const auto radians = *angle * pi / 180.0;
+            segment.delta_x = xsign * *length * std::cos(radians);
+            segment.delta_y = ysign * *length * std::sin(radians);
+        }
+        segment.face_label = source.face_label;
+        segment.left_label = source.left_label;
+        segment.bottom_label = source.bottom_label;
+        segment.right_label = source.right_label;
+        segment.top_label = source.top_label;
+        segment.skirt_label = source.skirt_label;
+        segment.horizontal = std::abs(segment.delta_y) < 1e-5;
+        if (segment.delta_y > 0.0) sign = CGAL::POSITIVE;
+        if (segment.delta_y < 0.0) sign = CGAL::NEGATIVE;
+        segments.push_back(segment);
+    }
+    auto profile = Profile::create(std::move(segments), sign);
+    if (!profile) error = "Extrusion runtime profile evaluated to an invalid profile.";
+    return profile;
+}
+
 } // namespace
 
 InstructionHandler make_instruction_handler(InstructionConfig config)
@@ -48,8 +135,11 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
             result.failure_message = "Extrusion requires one canonical geometry input.";
             return result;
         }
-        if (!config.profile) {
+        std::string profile_error;
+        const auto profile = evaluate_profile(config, frame, profile_error);
+        if (!profile) {
             result.failure_message = "Extrusion requires an immutable profile.";
+            if (!profile_error.empty()) result.failure_message = profile_error;
             return result;
         }
         if (!frame.element_ids) {
@@ -78,7 +168,7 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
                     ? "Could not prepare extrusion source face."
                     : prepared.diagnostics.front().message;
             } else {
-                const auto input = make_kernel_input(prepared.face, config.profile,
+                const auto input = make_kernel_input(prepared.face, *profile,
                     config.bottom_label, config.right_label, config.top_label,
                     config.left_label, config.skirt_label, config.cap_label);
                 if (!input) {

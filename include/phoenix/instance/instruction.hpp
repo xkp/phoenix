@@ -2,6 +2,9 @@
 
 #include "phoenix/execution.hpp"
 #include "phoenix/instance/placement.hpp"
+#include "phoenix/scripting/numeric_value.hpp"
+
+#include <utility>
 
 namespace phoenix::instance {
 
@@ -16,15 +19,32 @@ struct ExternalPrototypeIdentity {
 };
 
 struct RangeStep {
-    double value = 0.0;
-    std::optional<double> range;
-    double step = -1.0;
+    scripting::NumericRange value;
+    RangeStep() = default;
+    explicit RangeStep(scripting::NumericRange range) : value(std::move(range)) {}
+    RangeStep(double minimum, std::optional<double> maximum = std::nullopt, double step = -1.0)
+        : value{
+            scripting::numeric_literal(minimum),
+            maximum ? std::optional<scripting::NumericValue>{
+                scripting::numeric_literal(*maximum)}
+                    : std::nullopt,
+            step > 0.0 ? std::optional<scripting::NumericValue>{
+                scripting::numeric_literal(step)}
+                    : std::nullopt}
+    {
+    }
 };
 
 struct TransformRanges {
-    RangeStep rotation_x, rotation_y, rotation_z;
-    RangeStep scale_x{1.0}, scale_y{1.0}, scale_z{1.0};
-    RangeStep translation_x, translation_y, translation_z;
+    RangeStep rotation_x{0.0};
+    RangeStep rotation_y{0.0};
+    RangeStep rotation_z{0.0};
+    RangeStep scale_x{1.0};
+    RangeStep scale_y{1.0};
+    RangeStep scale_z{1.0};
+    RangeStep translation_x{0.0};
+    RangeStep translation_y{0.0};
+    RangeStep translation_z{0.0};
 };
 
 struct InstructionConfig {

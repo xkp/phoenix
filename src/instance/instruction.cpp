@@ -1,9 +1,9 @@
 #include "phoenix/instance/instruction.hpp"
 
-#include <algorithm>
+#include "phoenix/scripting/quickjs_engine.hpp"
+
 #include <iomanip>
 #include <limits>
-#include <random>
 #include <sstream>
 #include <utility>
 
@@ -19,20 +19,38 @@ void append_inputs(std::vector<GeometryValue>& inputs,const RuntimeValue& value)
     else if(const auto* collection=value.as_geometry_collection())for(const auto& geometry:collection->contributions)if(geometry.geometry)inputs.push_back(geometry);
 }
 
-double sample(const RangeStep& option,std::mt19937_64& engine)
+std::optional<double> sample(
+    const RangeStep& option,
+    const InstructionExecutionFrame& frame,
+    std::string& error)
 {
-    if(!option.range)return option.value;
-    const auto low=std::min(option.value,*option.range),high=std::max(option.value,*option.range);
-    if(option.step>0){const auto slots=static_cast<std::uint64_t>((high-low)/option.step);std::uniform_int_distribution<std::uint64_t> d(0,slots);return std::min(low+d(engine)*option.step,high);}
-    std::uniform_real_distribution<double> d(low,high);return d(engine);
+    const auto evaluated = scripting::evaluate_numeric_range(option.value, frame);
+    if (evaluated.error) {
+        error = *evaluated.error;
+        return std::nullopt;
+    }
+    return evaluated.value;
 }
 
-PlacementOptions sampled(const InstructionConfig& config,SeedValue seed)
+std::optional<PlacementOptions> sampled(
+    const InstructionConfig& config,
+    const InstructionExecutionFrame& frame,
+    std::string& error)
 {
-    std::mt19937_64 engine(seed);auto result=config.placement;
-    result.rotation_degrees={sample(config.ranges.rotation_x,engine),sample(config.ranges.rotation_y,engine),sample(config.ranges.rotation_z,engine)};
-    result.scale={sample(config.ranges.scale_x,engine),sample(config.ranges.scale_y,engine),sample(config.ranges.scale_z,engine)};
-    result.translation={sample(config.ranges.translation_x,engine),sample(config.ranges.translation_y,engine),sample(config.ranges.translation_z,engine)};
+    auto result=config.placement;
+    const auto rx=sample(config.ranges.rotation_x,frame,error);
+    const auto ry=sample(config.ranges.rotation_y,frame,error);
+    const auto rz=sample(config.ranges.rotation_z,frame,error);
+    const auto sx=sample(config.ranges.scale_x,frame,error);
+    const auto sy=sample(config.ranges.scale_y,frame,error);
+    const auto sz=sample(config.ranges.scale_z,frame,error);
+    const auto tx=sample(config.ranges.translation_x,frame,error);
+    const auto ty=sample(config.ranges.translation_y,frame,error);
+    const auto tz=sample(config.ranges.translation_z,frame,error);
+    if(!rx||!ry||!rz||!sx||!sy||!sz||!tx||!ty||!tz)return std::nullopt;
+    result.rotation_degrees={*rx,*ry,*rz};
+    result.scale={*sx,*sy,*sz};
+    result.translation={*tx,*ty,*tz};
     return result;
 }
 
@@ -60,10 +78,23 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
         const auto base_seed=frame.effective_seed.value_or(SeedDeriver{}.derive(frame.seed_derivation));
         std::vector<ActorNode> children;std::vector<GeometryItemEffect> effects;std::size_t ordinal=0;
         for(const auto& input:inputs){
-            const auto common_options=config.one_seed_each?std::optional<PlacementOptions>{}:std::optional<PlacementOptions>{sampled(config,base_seed)};
+            std::string sample_error;
+            auto common_frame=frame;
+            common_frame.effective_seed=base_seed;
+            const auto common_options=config.one_seed_each
+                ? std::optional<PlacementOptions>{}
+                : sampled(config,common_frame,sample_error);
+            if(!sample_error.empty()){result.failure_message=sample_error;return result;}
             for(GeometryIndex face=0;face<input.geometry->faces().size();++face){
-                auto one=input.geometry->copy_face(face);auto options=common_options.value_or(sampled(config,SeedDeriver{}.derive({base_seed,frame.context.call_path,frame.inputs.node_id,std::nullopt,ordinal})));
-                const auto planned=build_placements(*one,options);
+                auto one=input.geometry->copy_face(face);
+                auto options=common_options;
+                if(!options){
+                    auto item_frame=frame;
+                    item_frame.effective_seed=SeedDeriver{}.derive({base_seed,frame.context.call_path,frame.inputs.node_id,std::nullopt,ordinal});
+                    options=sampled(config,item_frame,sample_error);
+                    if(!options){result.failure_message=sample_error;return result;}
+                }
+                const auto planned=build_placements(*one,*options);
                 if(!planned.success()){
                     const auto message=planned.diagnostics.empty()?"Instance placement failed.":planned.diagnostics.front();
                     result.failures.push_back({frame.inputs.node_id,ordinal,message,{{config.geometry_input_port,*value}},frame.call_stack});
@@ -81,8 +112,9 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
 
 std::string configuration_revision(const InstructionConfig& c)
 {
+    const auto& engine = scripting::QuickJsEngine{};
     std::ostringstream s;s<<std::setprecision(17)<<"instance-v1|"<<c.prototype.stable_id()<<'|'<<static_cast<int>(c.placement.orientation)<<'|'<<static_cast<int>(c.placement.position)<<'|'<<(c.placement.orientation_label?c.placement.orientation_label->value():UINT64_MAX)<<'|'<<c.one_seed_each<<'|'<<c.remove_input;
-    const RangeStep* values[]={&c.ranges.rotation_x,&c.ranges.rotation_y,&c.ranges.rotation_z,&c.ranges.scale_x,&c.ranges.scale_y,&c.ranges.scale_z,&c.ranges.translation_x,&c.ranges.translation_y,&c.ranges.translation_z};for(auto v:values)s<<'|'<<v->value<<'|'<<(v->range?*v->range:std::numeric_limits<double>::quiet_NaN())<<'|'<<v->step;return s.str();
+    const RangeStep* values[]={&c.ranges.rotation_x,&c.ranges.rotation_y,&c.ranges.rotation_z,&c.ranges.scale_x,&c.ranges.scale_y,&c.ranges.scale_z,&c.ranges.translation_x,&c.ranges.translation_y,&c.ranges.translation_z};for(auto v:values)s<<'|'<<scripting::numeric_range_revision(v->value,engine);return s.str();
 }
 
 } // namespace phoenix::instance

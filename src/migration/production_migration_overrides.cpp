@@ -1,5 +1,6 @@
 #include "phoenix/migration/production_migration_overrides.hpp"
 
+#include <optional>
 #include <regex>
 
 namespace phoenix::migration {
@@ -32,6 +33,18 @@ std::string extract_string_value(const std::string& text, const std::string& key
     const std::regex pattern{"\"" + key + R"regex("\s*:\s*"([^"]*)")regex"};
     const std::sregex_iterator it{text.begin(), text.end(), pattern};
     return it == std::sregex_iterator{} ? std::string{} : (*it)[1].str();
+}
+
+std::optional<NodeId> extract_node_id_value(const std::string& text)
+{
+    const std::regex pattern{R"regex("id"\s*:\s*([0-9]+))regex"};
+    const std::sregex_iterator it{text.begin(), text.end(), pattern};
+    if (it == std::sregex_iterator{}) return std::nullopt;
+    try {
+        return static_cast<NodeId>(std::stoull((*it)[1].str()));
+    } catch (...) {
+        return std::nullopt;
+    }
 }
 
 std::string extract_array_text(const std::string& text, const std::string& key)
@@ -199,6 +212,25 @@ std::size_t disable_function_call_nodes(std::string& nodes_text, const FunctionI
     return count;
 }
 
+std::size_t disable_node(std::string& nodes_text, NodeId node_id)
+{
+    const auto key_pos = nodes_text.find("\"nodes\"");
+    if (key_pos == std::string::npos) return 0;
+    const auto array_start = nodes_text.find('[', key_pos);
+    if (array_start == std::string::npos) return 0;
+    const auto nodes_array = extract_array_text(nodes_text, "nodes");
+
+    auto objects = extract_object_ranges(nodes_array);
+    std::size_t count = 0;
+    for (auto it = objects.rbegin(); it != objects.rend(); ++it) {
+        if (extract_node_id_value(it->text).value_or(0) != node_id) continue;
+        const auto disabled = mark_object_disabled(it->text);
+        nodes_text.replace(array_start + 1 + it->begin, it->end - it->begin, disabled);
+        ++count;
+    }
+    return count;
+}
+
 std::string object_with_id(const std::string& id, const std::string& value_json)
 {
     if (value_json.size() < 2 || value_json.front() != '{') return value_json;
@@ -261,6 +293,19 @@ OverrideApplicationResult ProductionMigrationOverrideApplier::apply(
                     result.applied.push_back(AppliedMigrationOverride{
                         "ignored_function_reference",
                         override.function_id,
+                        {},
+                        function.candidate.id,
+                        count});
+                }
+            }
+
+            for (const auto& override : overrides.ignored_instructions) {
+                if (function.candidate.id != override.function_id) continue;
+                const auto count = disable_node(function.nodes_text, override.node_id);
+                if (count != 0) {
+                    result.applied.push_back(AppliedMigrationOverride{
+                        "ignored_instruction",
+                        std::to_string(override.node_id),
                         {},
                         function.candidate.id,
                         count});

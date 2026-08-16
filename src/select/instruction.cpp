@@ -40,14 +40,16 @@ double edge_length(const CanonicalGeometry& geometry, GeometryIndex halfedge)
 }
 
 bool matches(const CanonicalGeometry& geometry, GeometryIndex face_index,
-    const FaceCondition& condition)
+    const FaceCondition& condition,
+    double minimum_edge_length,
+    double maximum_edge_length)
 {
     const auto& face = geometry.faces()[face_index];
     if (condition.face_label && face.label != *condition.face_label) return false;
     const bool needs_edge = condition.edge_label || condition.opposite_face_label
         || condition.opposite_edge_label || condition.require_border_edge
-        || condition.minimum_edge_length > 0.0
-        || condition.maximum_edge_length < std::numeric_limits<double>::max();
+        || minimum_edge_length > 0.0
+        || maximum_edge_length < std::numeric_limits<double>::max();
     if (!needs_edge) return true;
     auto current = face.halfedge;
     do {
@@ -75,12 +77,17 @@ bool matches(const CanonicalGeometry& geometry, GeometryIndex face_index,
             continue;
         }
         const auto length = edge_length(geometry, current);
-        if (length >= condition.minimum_edge_length
-            && length <= condition.maximum_edge_length) return true;
+        if (length >= minimum_edge_length && length <= maximum_edge_length) return true;
         current = edge.next;
     } while (current != face.halfedge);
     return false;
 }
+
+struct EvaluatedCondition {
+    const FaceCondition* source = nullptr;
+    double minimum_edge_length = 0.0;
+    double maximum_edge_length = std::numeric_limits<double>::max();
+};
 
 } // namespace
 
@@ -111,18 +118,36 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
             for (GeometryIndex face = 0; face < input.geometry->faces().size(); ++face)
                 candidates.push_back({input, face});
 
-        auto remaining = config.limit.count;
+        auto count = scripting::evaluate_numeric_range(config.limit.count, frame);
+        if (count.error) {
+            result.failure_message = *count.error;
+            return result;
+        }
+        auto remaining = static_cast<std::int64_t>(std::round(count.value));
         std::mt19937_64 random(config.limit.seed
             ^ frame.effective_seed.value_or(frame.context.global_seed));
-        if (remaining >= 0 && config.limit.random_range >= 0) {
-            const auto step = std::max<std::int64_t>(1, config.limit.random_step);
-            const auto slots = config.limit.random_range / step;
-            std::uniform_int_distribution<std::int64_t> distribution(0, slots);
-            remaining += distribution(random) * step;
-        }
         if (config.limit.percentage && remaining >= 0)
             remaining = remaining * static_cast<std::int64_t>(candidates.size()) / 100;
         if (remaining > 0) std::shuffle(candidates.begin(), candidates.end(), random);
+
+        std::vector<EvaluatedCondition> conditions;
+        conditions.reserve(config.conditions.size());
+        for (const auto& condition : config.conditions) {
+            auto minimum = scripting::evaluate_numeric(condition.minimum_edge_length, frame);
+            if (minimum.error) {
+                result.failure_message = *minimum.error;
+                return result;
+            }
+            auto maximum = scripting::evaluate_numeric(condition.maximum_edge_length, frame);
+            if (maximum.error) {
+                result.failure_message = *maximum.error;
+                return result;
+            }
+            conditions.push_back(EvaluatedCondition{
+                &condition,
+                minimum.value,
+                maximum.value});
+        }
 
         std::map<PortId, std::vector<GeometryValue>> routed;
         for (const auto& candidate : candidates) {
@@ -137,9 +162,14 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
                     break;
                 }
             } else {
-                matched = std::all_of(config.conditions.begin(), config.conditions.end(),
-                    [&](const FaceCondition& condition) {
-                        return matches(*candidate.source.geometry, candidate.face, condition);
+                matched = std::all_of(conditions.begin(), conditions.end(),
+                    [&](const EvaluatedCondition& condition) {
+                        return matches(
+                            *candidate.source.geometry,
+                            candidate.face,
+                            *condition.source,
+                            condition.minimum_edge_length,
+                            condition.maximum_edge_length);
                     });
             }
             if (!matched) output = config.else_output_port;

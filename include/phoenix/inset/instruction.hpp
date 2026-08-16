@@ -2,13 +2,14 @@
 
 #include "phoenix/execution.hpp"
 #include "phoenix/inset/production_adapter.hpp"
+#include "phoenix/scripting/numeric_value.hpp"
 
 namespace phoenix::inset {
 
 struct InstructionConfig {
     PortId geometry_input_port = "geometry";
     PortId geometry_output_port = "result";
-    double amount = 0.0;
+    scripting::NumericRange amount;
     Labels labels;
 };
 

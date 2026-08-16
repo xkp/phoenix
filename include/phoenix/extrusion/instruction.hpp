@@ -2,6 +2,7 @@
 
 #include "phoenix/execution.hpp"
 #include "phoenix/extrusion/kernel.hpp"
+#include "phoenix/scripting/numeric_value.hpp"
 
 namespace phoenix::extrusion {
 
@@ -30,6 +31,21 @@ struct InstructionConfig {
     LabelId left_label = unassigned_label_id;
     LabelId skirt_label = unassigned_label_id;
     LabelId cap_label = unassigned_label_id;
+    struct RuntimeProfileSegment {
+        scripting::NumericRange delta_x;
+        scripting::NumericRange delta_y;
+        std::optional<scripting::NumericRange> width;
+        std::optional<scripting::NumericRange> height;
+        std::optional<scripting::NumericRange> length;
+        std::optional<scripting::NumericRange> angle_degrees;
+        LabelId face_label = unassigned_label_id;
+        LabelId left_label = unassigned_label_id;
+        LabelId bottom_label = unassigned_label_id;
+        LabelId right_label = unassigned_label_id;
+        LabelId top_label = unassigned_label_id;
+        LabelId skirt_label = unassigned_label_id;
+    };
+    std::vector<RuntimeProfileSegment> runtime_profile;
     RepairPolicy repair_policy;
     StageMetricsSink* metrics_sink = nullptr;
 };

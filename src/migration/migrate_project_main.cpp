@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <regex>
 #include <string>
 #include <vector>
@@ -200,6 +201,18 @@ const phoenix::migration::ProductionRepairItem* find_item(
     return nullptr;
 }
 
+std::optional<phoenix::NodeId> parse_node_id(const std::string& text)
+{
+    try {
+        std::size_t consumed = 0;
+        const auto value = std::stoull(text, &consumed);
+        if (consumed != text.size()) return std::nullopt;
+        return static_cast<phoenix::NodeId>(value);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
 phoenix::migration::ProductionMigrationOverrides build_overrides_from_selections(
     const phoenix::migration::ProductionRepairPlan& plan,
     const std::vector<std::pair<std::string, std::string>>& selections)
@@ -214,6 +227,13 @@ phoenix::migration::ProductionMigrationOverrides build_overrides_from_selections
         if (item->diagnostic_code == "function_link.unresolved_function_reference"
             && choice->choice_id == "ignore_calls") {
             overrides.ignored_function_references.push_back({item->subject_id});
+            continue;
+        }
+        if (item->diagnostic_code == "instructions.retired_label_method"
+            && choice->choice_id == "ignore_instruction") {
+            const auto node_id = parse_node_id(item->subject_name);
+            if (!node_id.has_value()) continue;
+            overrides.ignored_instructions.push_back({item->subject_id, *node_id});
             continue;
         }
         if (item->diagnostic_code == "labels.conflicting_definition") {
@@ -255,6 +275,10 @@ void append_overrides(
         target.ignored_function_references.end(),
         source.ignored_function_references.begin(),
         source.ignored_function_references.end());
+    target.ignored_instructions.insert(
+        target.ignored_instructions.end(),
+        source.ignored_instructions.begin(),
+        source.ignored_instructions.end());
     target.label_definition_choices.insert(
         target.label_definition_choices.end(),
         source.label_definition_choices.begin(),
@@ -397,6 +421,7 @@ int main(int argc, char** argv)
                       << " " << diagnostic.code;
             if (!diagnostic.function_id.empty()) std::cerr << " function=" << diagnostic.function_id;
             if (!diagnostic.label_uid.empty()) std::cerr << " label=" << diagnostic.label_uid;
+            if (diagnostic.node_id != 0) std::cerr << " node=" << diagnostic.node_id;
             if (!diagnostic.path.empty()) std::cerr << " path=" << diagnostic.path.string();
             std::cerr << ": " << diagnostic.message << "\n";
         }

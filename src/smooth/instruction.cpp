@@ -1,5 +1,7 @@
 #include "phoenix/smooth/instruction.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace phoenix::smooth {
@@ -35,6 +37,11 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
     return [config = std::move(config)](const InstructionExecutionFrame& frame) {
         InstructionResult result;
         result.node_id = frame.inputs.node_id;
+        if (config.unsupported_runtime_reason) {
+            result.failure_message = *config.unsupported_runtime_reason;
+            return result;
+        }
+
         const auto* value = find_input(frame, config.geometry_input_port);
         if (!value) {
             result.failure_message = "Smooth requires canonical geometry input.";
@@ -57,12 +64,21 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
             return result;
         }
 
+        auto evaluated_level = scripting::evaluate_numeric(config.max_refinement_level, frame);
+        if (evaluated_level.error) {
+            result.failure_message = *evaluated_level.error;
+            return result;
+        }
+        auto options = config.options;
+        options.max_refinement_level = static_cast<std::uint32_t>(
+            std::clamp(std::llround(evaluated_level.value), 0LL, 16LL));
+
         std::vector<GeometryValue> outputs;
         outputs.reserve(inputs.size());
         for (std::size_t item = 0; item < inputs.size(); ++item) {
             const auto& input = inputs[item];
             const auto input_owner = owner(frame, input);
-            const auto refined = subdivide(*input.geometry, *frame.element_ids, config.options);
+            const auto refined = subdivide(*input.geometry, *frame.element_ids, options);
             if (!refined.success()) {
                 const std::string message = refined.diagnostics.empty()
                     ? "OpenSubdiv refinement failed." : refined.diagnostics.front().message;

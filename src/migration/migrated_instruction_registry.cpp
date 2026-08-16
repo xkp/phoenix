@@ -6,6 +6,7 @@
 #include "phoenix/control/if_instruction.hpp"
 #include "phoenix/extrusion/instruction.hpp"
 #include "phoenix/inset/instruction.hpp"
+#include "phoenix/instance/instruction.hpp"
 #include "phoenix/loop/instruction.hpp"
 #include "phoenix/merge/instruction.hpp"
 #include "phoenix/partition/instruction.hpp"
@@ -13,8 +14,10 @@
 #include "phoenix/partition/ported/production/partition_solver_filters.h"
 #include "phoenix/rename/instruction.hpp"
 #include "phoenix/scripting/geometry_bindings.hpp"
+#include "phoenix/scripting/numeric_value.hpp"
 #include "phoenix/scripting/variables.hpp"
 #include "phoenix/select/instruction.hpp"
+#include "phoenix/smooth/instruction.hpp"
 
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -718,9 +721,151 @@ scripting::ExpressionSpec migrated_expression(
     return spec;
 }
 
-std::string legacy_expression_source(std::string source)
+scripting::Bindings numeric_bindings(const MigratedFunctionPackage& function)
 {
-    return std::regex_replace(source, std::regex(R"(\[([A-Za-z_][A-Za-z0-9_]*)\])"), "$1");
+    scripting::Bindings result;
+    for (const auto& variable : function.numeric_variables) {
+        result[variable.first] = variable.second;
+    }
+    return result;
+}
+
+scripting::NumericValue migrated_numeric_value(
+    const MigratedFunctionPackage& function,
+    const std::string& node_data,
+    const std::string& key,
+    double fallback = 0.0)
+{
+    if (auto value = json_number_or_quoted_numeric(node_data, key)) {
+        return scripting::numeric_literal(*value);
+    }
+    if (auto raw = json_string(node_data, key); raw.has_value() && !raw->empty()) {
+        if (auto resolved = NumericExpressionParser{*raw, function.numeric_variables}.parse()) {
+            return scripting::numeric_literal(*resolved);
+        }
+        return scripting::numeric_expression_value(*raw, numeric_bindings(function), fallback);
+    }
+    return scripting::numeric_literal(fallback);
+}
+
+scripting::NumericRange migrated_numeric_range(
+    const MigratedFunctionPackage& function,
+    const std::string& node_data,
+    const std::string& key,
+    double fallback = 0.0)
+{
+    scripting::NumericRange result;
+    result.minimum = migrated_numeric_value(function, node_data, key, fallback);
+    if (json_number_or_quoted_numeric(node_data, key + "Range")
+        || (json_string(node_data, key + "Range").has_value()
+            && !json_string(node_data, key + "Range")->empty())) {
+        result.maximum = migrated_numeric_value(function, node_data, key + "Range", fallback);
+    }
+    if (json_number_or_quoted_numeric(node_data, key + "Step")
+        || (json_string(node_data, key + "Step").has_value()
+            && !json_string(node_data, key + "Step")->empty())) {
+        result.step = migrated_numeric_value(function, node_data, key + "Step", -1.0);
+    }
+    return result;
+}
+
+bool has_numeric_field(const std::string& node_data, const std::string& key)
+{
+    return json_number_or_quoted_numeric(node_data, key).has_value()
+        || (json_string(node_data, key).has_value() && !json_string(node_data, key)->empty());
+}
+
+void load_runtime_profile_labels(
+    const LoadedMigratedPackage& package,
+    const std::string& data,
+    extrusion::InstructionConfig::RuntimeProfileSegment& segment)
+{
+    if (auto label = json_string(data, "label")) {
+        segment.face_label = label_id_for(package, *label).value_or(unassigned_label_id);
+    }
+    if (auto label = json_string(data, "left_label")) {
+        segment.left_label = label_id_for(package, *label).value_or(unassigned_label_id);
+    }
+    if (auto label = json_string(data, "bottom_label")) {
+        segment.bottom_label = label_id_for(package, *label).value_or(unassigned_label_id);
+    }
+    if (auto label = json_string(data, "right_label")) {
+        segment.right_label = label_id_for(package, *label).value_or(unassigned_label_id);
+    }
+    if (auto label = json_string(data, "top_label")) {
+        segment.top_label = label_id_for(package, *label).value_or(unassigned_label_id);
+    }
+    if (auto label = json_string(data, "skirt_label")) {
+        segment.skirt_label = label_id_for(package, *label).value_or(unassigned_label_id);
+    }
+}
+
+std::optional<std::vector<extrusion::InstructionConfig::RuntimeProfileSegment>>
+runtime_profile_from_text(
+    const LoadedMigratedPackage& package,
+    const MigratedFunctionPackage& function,
+    const std::string& text)
+{
+    const auto segments_array = extract_array_text(text, "segments");
+    std::vector<extrusion::InstructionConfig::RuntimeProfileSegment> segments;
+    for (const auto& segment_array_text : json_array_items(segments_array)) {
+        const auto first_bracket = segment_array_text.find('[');
+        const auto last_bracket = segment_array_text.rfind(']');
+        if (first_bracket == std::string::npos || last_bracket == std::string::npos
+            || last_bracket <= first_bracket) {
+            return std::nullopt;
+        }
+        const auto segment_inner = segment_array_text.substr(
+            first_bracket + 1,
+            last_bracket - first_bracket - 1);
+        const auto items = json_array_items(segment_inner);
+        if (items.size() < 3) return std::nullopt;
+        const auto start_x = json_double(items[0], "x");
+        const auto start_y = json_double(items[0], "y");
+        const auto end_x = json_double(items[items.size() == 5 ? 3 : 1], "x");
+        const auto end_y = json_double(items[items.size() == 5 ? 3 : 1], "y");
+        if (!start_x.has_value() || !start_y.has_value()
+            || !end_x.has_value() || !end_y.has_value()) {
+            return std::nullopt;
+        }
+        const auto& data = items.back();
+        extrusion::InstructionConfig::RuntimeProfileSegment segment;
+        segment.delta_x = scripting::NumericRange{
+            scripting::numeric_literal(*end_x - *start_x),
+            std::nullopt,
+            std::nullopt};
+        segment.delta_y = scripting::NumericRange{
+            scripting::numeric_literal(*end_y - *start_y),
+            std::nullopt,
+            std::nullopt};
+        if (has_numeric_field(data, "width")) {
+            segment.width = migrated_numeric_range(function, data, "width", std::abs(*end_x - *start_x));
+        }
+        if (has_numeric_field(data, "height")) {
+            segment.height = migrated_numeric_range(function, data, "height", std::abs(*end_y - *start_y));
+        }
+        if (has_numeric_field(data, "length")) {
+            segment.length = migrated_numeric_range(
+                function,
+                data,
+                "length",
+                std::hypot(*end_x - *start_x, *end_y - *start_y));
+        }
+        if (has_numeric_field(data, "angle")) {
+            segment.angle_degrees = migrated_numeric_range(
+                function,
+                data,
+                "angle",
+                std::atan2(std::abs(*end_y - *start_y), std::abs(*end_x - *start_x))
+                    * 180.0 / 3.14159265358979323846);
+        }
+        load_runtime_profile_labels(package, data, segment);
+        segments.push_back(std::move(segment));
+    }
+    return segments.empty()
+        ? std::nullopt
+        : std::optional<std::vector<extrusion::InstructionConfig::RuntimeProfileSegment>>{
+            std::move(segments)};
 }
 
 scripting::VariablePlan migrated_variable_plan(
@@ -1008,6 +1153,54 @@ std::optional<control::LodInstructionConfig> adapt_lod(
     return config;
 }
 
+std::optional<smooth::InstructionConfig> adapt_smooth(
+    const MigratedFunctionPackage& function,
+    const InstructionDescriptor& instruction,
+    const std::string& node_data)
+{
+    auto input = first_input_port(instruction);
+    auto output = first_output_port(instruction);
+    if (!input.has_value() || !output.has_value() || node_data.empty()) {
+        return std::nullopt;
+    }
+
+    smooth::InstructionConfig config;
+    config.geometry_input_port = *input;
+    config.geometry_output_port = *output;
+
+    const auto method = json_string(node_data, "method").value_or("subdivision");
+    if (method == "hardedges" || method == "hardEdges") {
+        config.unsupported_runtime_reason =
+            "Smooth hard edges are not supported by the Phoenix runtime yet.";
+        return config;
+    }
+    if (method != "subdivision") return std::nullopt;
+
+    config.max_refinement_level = migrated_numeric_value(
+        function,
+        node_data,
+        "maxRefinementLevel",
+        2.0);
+    config.options.max_refinement_level = 2;
+    config.options.smoothing_group = static_cast<std::int32_t>(
+        json_int(node_data, "smoothingGroup").value_or(0));
+
+    const auto scheme = json_string(node_data, "scheme").value_or("linear");
+    if (scheme == "catmark") config.options.scheme = smooth::SubdivisionScheme::catmark;
+    else if (scheme == "loop") config.options.scheme = smooth::SubdivisionScheme::loop;
+    else config.options.scheme = smooth::SubdivisionScheme::bilinear;
+
+    const auto boundary = json_string(node_data, "boundaryInterpolation").value_or("edge_only");
+    if (boundary == "none") {
+        config.options.boundary_interpolation = smooth::BoundaryInterpolation::none;
+    } else if (boundary == "edge_and_corner") {
+        config.options.boundary_interpolation = smooth::BoundaryInterpolation::edge_and_corner;
+    } else {
+        config.options.boundary_interpolation = smooth::BoundaryInterpolation::edge_only;
+    }
+    return config;
+}
+
 std::optional<merge::InstructionConfig> adapt_merge(
     const InstructionDescriptor& instruction,
     const std::string& node_data)
@@ -1027,6 +1220,78 @@ std::optional<merge::InstructionConfig> adapt_merge(
     config.options.merge_faces_labels = json_bool(node_data, "mergeFacesLabels").value_or(false);
     config.options.join_collinear = json_bool(node_data, "joinColineal").value_or(false);
     config.options.merge_borders = json_bool(node_data, "mergeBorders").value_or(method_edges);
+    return config;
+}
+
+std::uint64_t stable_fnv1a_64(std::string_view text)
+{
+    std::uint64_t hash = 14695981039346656037ull;
+    for (const auto byte : text) {
+        hash ^= static_cast<unsigned char>(byte);
+        hash *= 1099511628211ull;
+    }
+    return hash == 0 ? 1 : hash;
+}
+
+std::optional<instance::InstructionConfig> adapt_instance(
+    const LoadedMigratedPackage& package,
+    const MigratedFunctionPackage& function,
+    const InstructionDescriptor& instruction,
+    const std::string& node_data)
+{
+    auto input = first_input_port(instruction);
+    auto output = first_output_port(instruction);
+    if (!input.has_value() || !output.has_value() || node_data.empty()) {
+        return std::nullopt;
+    }
+
+    const auto model = json_string(node_data, "model").value_or("");
+    const auto name = json_string(node_data, "name").value_or(model);
+    if (model.empty()) return std::nullopt;
+
+    instance::InstructionConfig config;
+    config.geometry_input_port = *input;
+    config.output_port = *output;
+    config.prototype.asset_uid = model;
+    config.prototype.display_name = name.empty()
+        ? std::optional<std::string>{}
+        : std::optional<std::string>{name};
+    config.prototype.content_fingerprint = stable_fnv1a_64(model + "|" + name);
+    config.prototype.asset_version = 0;
+    config.remove_input = json_bool(node_data, "removeInput").value_or(false);
+
+    const auto method = json_string(node_data, "method").value_or("axisAligned");
+    if (method == "byFace") {
+        config.placement.orientation = instance::OrientationMethod::by_face_unsupported;
+    } else {
+        config.placement.orientation = instance::OrientationMethod::axis_aligned;
+    }
+
+    const auto label = json_string(node_data, "label").value_or("");
+    if (!label.empty()) {
+        const auto mapped = label_id_for(package, label);
+        if (!mapped.has_value()) return std::nullopt;
+        config.placement.orientation_label = *mapped;
+    }
+
+    const auto position = json_int(node_data, "position").value_or(0);
+    config.placement.position = position == 1
+        ? instance::FacePosition::centroid
+        : instance::FacePosition::bounding_box_center;
+
+    auto range = [&](const std::string& key, double fallback) {
+        return instance::RangeStep{
+            migrated_numeric_range(function, node_data, key, fallback)};
+    };
+    config.ranges.rotation_x = range("angleX", 0.0);
+    config.ranges.rotation_y = range("angle", 0.0);
+    config.ranges.rotation_z = range("angleZ", 0.0);
+    config.ranges.scale_x = range("scaleX", 1.0);
+    config.ranges.scale_y = range("scaleY", 1.0);
+    config.ranges.scale_z = range("scaleZ", 1.0);
+    config.ranges.translation_x = range("x", 0.0);
+    config.ranges.translation_y = range("y", 0.0);
+    config.ranges.translation_z = range("z", 0.0);
     return config;
 }
 
@@ -1050,20 +1315,30 @@ AdaptResult<extrusion::InstructionConfig> adapt_extrusion(
     if (method == "amount" && !profile_object.empty()) {
         method = "profile";
     }
+    const auto has_amount = json_number_or_quoted_numeric(node_data, "amount").has_value()
+        || (json_string(node_data, "amount").has_value()
+            && !json_string(node_data, "amount")->empty());
     const auto amount = json_number_or_variable(function, node_data, "amount");
+    auto amount_range = migrated_numeric_range(function, node_data, "amount", 0.0);
+    if (json_number_or_quoted_numeric(node_data, "range")
+        || (json_string(node_data, "range").has_value()
+            && !json_string(node_data, "range")->empty())) {
+        amount_range.maximum = migrated_numeric_value(function, node_data, "range", 0.0);
+    }
+    if (json_number_or_quoted_numeric(node_data, "step")
+        || (json_string(node_data, "step").has_value()
+            && !json_string(node_data, "step")->empty())) {
+        amount_range.step = migrated_numeric_value(function, node_data, "step", -1.0);
+    }
     if (method == "label") {
         return AdaptResult<extrusion::InstructionConfig>::unsupported("retired_label_method");
     }
-    if (method != "map" && method != "profile" && !amount.has_value()) {
+    if (method != "map" && method != "profile" && !has_amount) {
         return AdaptResult<extrusion::InstructionConfig>::unsupported(
             "unresolved_amount:" + method + ":" + json_string(node_data, "amount").value_or("<non-string>"));
     }
-    if (method != "map" && method != "profile" && *amount == 0.0) {
+    if (method != "map" && method != "profile" && amount.has_value() && *amount == 0.0) {
         return AdaptResult<extrusion::InstructionConfig>::unsupported("zero_amount:" + method);
-    }
-    if (json_double(node_data, "range").value_or(-1.0) >= 0.0
-        || json_double(node_data, "step").value_or(-1.0) >= 0.0) {
-        return AdaptResult<extrusion::InstructionConfig>::unsupported("range_or_step");
     }
 
     extrusion::InstructionConfig config;
@@ -1098,11 +1373,9 @@ AdaptResult<extrusion::InstructionConfig> adapt_extrusion(
         if (profile_text == nullptr) {
             return AdaptResult<extrusion::InstructionConfig>::unsupported("profile_missing_profile");
         }
-        const auto profile = production_profile_from_text(package, *profile_text);
-        if (!profile.has_value()) {
-            return AdaptResult<extrusion::InstructionConfig>::unsupported("profile_unreadable_profile");
-        }
-        config.profile = *profile;
+        const auto runtime_profile = runtime_profile_from_text(package, function, *profile_text);
+        if (!runtime_profile.has_value()) return AdaptResult<extrusion::InstructionConfig>::unsupported("profile_unreadable_profile");
+        config.runtime_profile = *runtime_profile;
     } else if (method == "map") {
         const auto profile_id = single_mapped_profile_id(node_data);
         if (!profile_id.has_value()) {
@@ -1112,27 +1385,24 @@ AdaptResult<extrusion::InstructionConfig> adapt_extrusion(
         if (profile_text == nullptr) {
             return AdaptResult<extrusion::InstructionConfig>::unsupported("map_missing_profile");
         }
-        const auto profile = production_profile_from_text(package, *profile_text);
-        if (!profile.has_value()) {
-            return AdaptResult<extrusion::InstructionConfig>::unsupported("map_unreadable_profile");
-        }
-        config.profile = *profile;
+        const auto runtime_profile = runtime_profile_from_text(package, function, *profile_text);
+        if (!runtime_profile.has_value()) return AdaptResult<extrusion::InstructionConfig>::unsupported("map_unreadable_profile");
+        config.runtime_profile = *runtime_profile;
     } else {
         const auto sides = json_string(node_data, "sides");
         const auto side_label = sides ? label_id_for(package, *sides) : std::nullopt;
-        extrusion::ProfileSegment segment;
-        segment.delta_y = *amount;
+        extrusion::InstructionConfig::RuntimeProfileSegment segment;
+        segment.delta_y = amount_range;
+        segment.delta_x = scripting::NumericRange{scripting::numeric_literal(0.0), std::nullopt, std::nullopt};
         segment.face_label = side_label.value_or(unassigned_label_id);
         segment.left_label = side_label.value_or(config.left_label);
         segment.bottom_label = side_label.value_or(config.bottom_label);
         segment.right_label = side_label.value_or(config.right_label);
         segment.top_label = side_label.value_or(config.top_label);
         segment.skirt_label = config.skirt_label;
-        config.profile = extrusion::Profile::create(
-            std::vector<extrusion::ProfileSegment>{segment},
-            *amount < 0.0 ? CGAL::NEGATIVE : CGAL::POSITIVE);
+        config.runtime_profile = {std::move(segment)};
     }
-    if (!config.profile) {
+    if (!config.profile && config.runtime_profile.empty()) {
         return AdaptResult<extrusion::InstructionConfig>::unsupported("invalid_profile");
     }
     return AdaptResult<extrusion::InstructionConfig>::adapted(std::move(config));
@@ -1647,6 +1917,7 @@ AdaptResult<partition::InstructionConfig> adapt_partition(
 
 std::optional<rename::InstructionConfig> adapt_rename(
     const LoadedMigratedPackage& package,
+    const MigratedFunctionPackage& function,
     const InstructionDescriptor& instruction,
     const std::string& node_data)
 {
@@ -1735,10 +2006,16 @@ std::optional<rename::InstructionConfig> adapt_rename(
             } else if (type == "renameEdgeByLength"
                 || type == "advancedRenameEdgeByLength"
                 || type == "renameEdgeToItsFace") {
-                condition.minimum_length = json_double(condition_data, "min").value_or(0.0);
-                condition.maximum_length = json_double(
+                condition.minimum_length = migrated_numeric_value(
+                    function,
                     condition_data,
-                    "max").value_or(std::numeric_limits<double>::max());
+                    "min",
+                    0.0);
+                condition.maximum_length = migrated_numeric_value(
+                    function,
+                    condition_data,
+                    "max",
+                    std::numeric_limits<double>::max());
                 condition.length_kind =
                     rename_length_kind(json_string(condition_data, "kind").value_or("any"));
             } else {
@@ -1766,6 +2043,7 @@ std::optional<rename::InstructionConfig> adapt_rename(
 
 std::optional<select::InstructionConfig> adapt_select(
     const LoadedMigratedPackage& package,
+    const MigratedFunctionPackage& function,
     const InstructionDescriptor& instruction,
     const std::string& node_data)
 {
@@ -1790,9 +2068,7 @@ std::optional<select::InstructionConfig> adapt_select(
         config.else_output_port = *else_port;
     }
 
-    config.limit.count = json_int(node_data, "ouputLimit").value_or(-1);
-    config.limit.random_range = json_int(node_data, "ouputLimitRange").value_or(-1);
-    config.limit.random_step = json_int(node_data, "ouputLimitStep").value_or(1);
+    config.limit.count = migrated_numeric_range(function, node_data, "ouputLimit", -1.0);
     config.limit.percentage = json_bool(node_data, "outputLimitPct").value_or(false);
 
     if (method == "bylabel") {
@@ -1821,10 +2097,16 @@ std::optional<select::InstructionConfig> adapt_select(
                 || !set_optional_label(package, condition_data, "oppEdge", condition.opposite_edge_label)) {
                 return std::nullopt;
             }
-            condition.minimum_edge_length = json_double(condition_data, "min").value_or(0.0);
-            condition.maximum_edge_length = json_double(
+            condition.minimum_edge_length = migrated_numeric_value(
+                function,
                 condition_data,
-                "max").value_or(std::numeric_limits<double>::max());
+                "min",
+                0.0);
+            condition.maximum_edge_length = migrated_numeric_value(
+                function,
+                condition_data,
+                "max",
+                std::numeric_limits<double>::max());
         } else if (type == "hasBorderEdge") {
             if (!set_optional_label(package, condition_data, "label", condition.edge_label)) {
                 return std::nullopt;
@@ -1864,27 +2146,10 @@ std::optional<loop::InstructionConfig> adapt_loop(
     loop::InstructionConfig config;
     config.geometry_input_port = std::move(input);
     config.geometry_output_port = std::move(output);
-    if (const auto count = json_number_or_variable(function, node_data, "count")) {
-        config.options.count = static_cast<std::int64_t>(*count);
-    } else if (auto raw = json_string(node_data, "count"); raw.has_value() && !raw->empty()) {
-        config.count_expression = migrated_expression(legacy_expression_source(std::move(*raw)), function);
-    } else {
-        return std::nullopt;
-    }
-    if (const auto range = json_number_or_variable(function, node_data, "range")) {
-        config.options.range = static_cast<std::int64_t>(*range);
-    } else if (auto raw = json_string(node_data, "range"); raw.has_value() && !raw->empty()) {
-        config.range_expression = migrated_expression(legacy_expression_source(std::move(*raw)), function);
-    } else {
-        config.options.range = -1;
-    }
-    if (const auto step = json_number_or_variable(function, node_data, "step")) {
-        config.options.step = static_cast<std::int64_t>(*step);
-    } else if (auto raw = json_string(node_data, "step"); raw.has_value() && !raw->empty()) {
-        config.step_expression = migrated_expression(legacy_expression_source(std::move(*raw)), function);
-    } else {
-        config.options.step = -1;
-    }
+    config.count = migrated_numeric_range(function, node_data, "count", 0.0);
+    config.options.count = 0;
+    config.options.range = -1;
+    config.options.step = -1;
     config.body.function = &function.graph;
     config.body.ports.input = *body_input;
     if (auto feedback = find_output_port_named(instruction, "loop")) {
@@ -1911,13 +2176,22 @@ std::optional<inset::InstructionConfig> adapt_inset(
     if (!input.has_value() || !output.has_value() || node_data.empty()) {
         return std::nullopt;
     }
-    const auto amount = json_number_or_variable(function, node_data, "amount");
-    if (!amount.has_value() || *amount <= 0.0) return std::nullopt;
+    auto amount = migrated_numeric_range(function, node_data, "amount", 0.0);
+    if (json_number_or_quoted_numeric(node_data, "range")
+        || (json_string(node_data, "range").has_value()
+            && !json_string(node_data, "range")->empty())) {
+        amount.maximum = migrated_numeric_value(function, node_data, "range", 0.0);
+    }
+    if (json_number_or_quoted_numeric(node_data, "step")
+        || (json_string(node_data, "step").has_value()
+            && !json_string(node_data, "step")->empty())) {
+        amount.step = migrated_numeric_value(function, node_data, "step", -1.0);
+    }
 
     inset::InstructionConfig config;
     config.geometry_input_port = *input;
     config.geometry_output_port = *output;
-    config.amount = *amount;
+    config.amount = std::move(amount);
 
     auto label = [&](const std::string& key) {
         return label_id_for(package, json_string(node_data, key).value_or(""))
@@ -2121,6 +2395,30 @@ void register_input_handlers(
     result.supported_kinds.insert("input");
 }
 
+void register_instance_handlers(
+    MigratedInstructionRegistryResult& result,
+    const std::map<InstructionKey, instance::InstructionConfig>& configs)
+{
+    if (configs.empty()) return;
+
+    result.registry.register_handler(
+        "instance",
+        [configs](const InstructionExecutionFrame& frame) {
+            const auto it = configs.find(InstructionKey{
+                frame.context.function_id,
+                frame.inputs.node_id,
+            });
+            if (it == configs.end()) {
+                InstructionResult missing;
+                missing.node_id = frame.inputs.node_id;
+                missing.failure_message = "Migrated instance instruction has no decoded config.";
+                return missing;
+            }
+            return instance::make_instruction_handler(it->second)(frame);
+        });
+    result.supported_kinds.insert("instance");
+}
+
 void register_inset_handlers(
     MigratedInstructionRegistryResult& result,
     const std::map<InstructionKey, inset::InstructionConfig>& configs)
@@ -2241,6 +2539,30 @@ void register_select_handlers(
     result.supported_kinds.insert("select");
 }
 
+void register_smooth_handlers(
+    MigratedInstructionRegistryResult& result,
+    const std::map<InstructionKey, smooth::InstructionConfig>& configs)
+{
+    if (configs.empty()) return;
+
+    result.registry.register_handler(
+        "smooth",
+        [configs](const InstructionExecutionFrame& frame) {
+            const auto it = configs.find(InstructionKey{
+                frame.context.function_id,
+                frame.inputs.node_id,
+            });
+            if (it == configs.end()) {
+                InstructionResult missing;
+                missing.node_id = frame.inputs.node_id;
+                missing.failure_message = "Migrated smooth instruction has no decoded config.";
+                return missing;
+            }
+            return smooth::make_instruction_handler(it->second)(frame);
+        });
+    result.supported_kinds.insert("smooth");
+}
+
 void register_partition_handlers(
     MigratedInstructionRegistryResult& result,
     const std::map<InstructionKey, partition::InstructionConfig>& configs)
@@ -2274,6 +2596,7 @@ MigratedInstructionRegistryResult make_migrated_instruction_registry(
     std::map<InstructionKey, control::CaseInstructionConfig> case_configs;
     std::map<InstructionKey, control::ChoiceInstructionConfig> choice_configs;
     std::map<InstructionKey, control::IfInstructionConfig> if_configs;
+    std::map<InstructionKey, instance::InstructionConfig> instance_configs;
     std::map<InstructionKey, InputInstructionConfig> input_configs;
     std::map<InstructionKey, inset::InstructionConfig> inset_configs;
     std::map<InstructionKey, control::LodInstructionConfig> lod_configs;
@@ -2283,6 +2606,7 @@ MigratedInstructionRegistryResult make_migrated_instruction_registry(
     std::map<InstructionKey, partition::InstructionConfig> partition_configs;
     std::map<InstructionKey, rename::InstructionConfig> rename_configs;
     std::map<InstructionKey, select::InstructionConfig> select_configs;
+    std::map<InstructionKey, smooth::InstructionConfig> smooth_configs;
 
     for (const auto& entry : package.functions) {
         for (const auto& instruction : entry.second.graph.instructions) {
@@ -2341,6 +2665,19 @@ MigratedInstructionRegistryResult make_migrated_instruction_registry(
                     package,
                     node_data_for(entry.second, instruction.id))) {
                     input_configs.emplace(
+                        InstructionKey{entry.first, instruction.id},
+                        std::move(*config));
+                    ++result.adapted_by_kind[instruction.kind];
+                    continue;
+                }
+            }
+            if (instruction.kind == "instance") {
+                if (auto config = adapt_instance(
+                    package,
+                    entry.second,
+                    instruction,
+                    node_data_for(entry.second, instruction.id))) {
+                    instance_configs.emplace(
                         InstructionKey{entry.first, instruction.id},
                         std::move(*config));
                     ++result.adapted_by_kind[instruction.kind];
@@ -2407,6 +2744,7 @@ MigratedInstructionRegistryResult make_migrated_instruction_registry(
             if (instruction.kind == "rename") {
                 if (auto config = adapt_rename(
                     package,
+                    entry.second,
                     instruction,
                     node_data_for(entry.second, instruction.id))) {
                     rename_configs.emplace(
@@ -2442,9 +2780,22 @@ MigratedInstructionRegistryResult make_migrated_instruction_registry(
             if (instruction.kind == "select") {
                 if (auto config = adapt_select(
                     package,
+                    entry.second,
                     instruction,
                     node_data_for(entry.second, instruction.id))) {
                     select_configs.emplace(
+                        InstructionKey{entry.first, instruction.id},
+                        std::move(*config));
+                    ++result.adapted_by_kind[instruction.kind];
+                    continue;
+                }
+            }
+            if (instruction.kind == "smooth") {
+                if (auto config = adapt_smooth(
+                    entry.second,
+                    instruction,
+                    node_data_for(entry.second, instruction.id))) {
+                    smooth_configs.emplace(
                         InstructionKey{entry.first, instruction.id},
                         std::move(*config));
                     ++result.adapted_by_kind[instruction.kind];
@@ -2459,6 +2810,7 @@ MigratedInstructionRegistryResult make_migrated_instruction_registry(
     register_choice_handlers(result, choice_configs);
     register_if_handlers(result, if_configs);
     register_input_handlers(result, input_configs);
+    register_instance_handlers(result, instance_configs);
     register_inset_handlers(result, inset_configs);
     register_lod_handlers(result, lod_configs);
     register_loop_handlers(result, loop_configs);
@@ -2467,6 +2819,7 @@ MigratedInstructionRegistryResult make_migrated_instruction_registry(
     register_partition_handlers(result, partition_configs);
     register_rename_handlers(result, rename_configs);
     register_select_handlers(result, select_configs);
+    register_smooth_handlers(result, smooth_configs);
 
     std::map<FunctionId, std::map<std::string, double>> static_variables;
     for (const auto& entry : package.functions) {

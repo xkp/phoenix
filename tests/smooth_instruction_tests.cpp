@@ -46,7 +46,7 @@ bool successful_publication_and_cache()
 {
     using namespace phoenix;
     smooth::InstructionConfig config;
-    config.options.max_refinement_level = 1;
+    config.max_refinement_level = scripting::numeric_literal(1.0);
     const auto handler = smooth::make_instruction_handler(config);
     std::size_t invocations = 0;
     InstructionRegistry registry;
@@ -102,11 +102,31 @@ bool failure_is_transactional()
         && result.failures.size() == 1;
 }
 
+bool hard_edges_report_runtime_unsupported()
+{
+    using namespace phoenix;
+    smooth::InstructionConfig config;
+    config.unsupported_runtime_reason =
+        "Smooth hard edges are not supported by the Phoenix runtime yet.";
+    const auto handler = smooth::make_instruction_handler(config);
+    InstructionExecutionFrame frame;
+    frame.inputs.node_id = 7;
+    frame.inputs.promised_inputs = {{"geometry", RuntimeValue::geometry(
+        quad(), "source", ActorId{"actor:smooth-hardedges"})}};
+    RunElementIdAllocator ids(3000);
+    frame.element_ids = &ids;
+    const auto result = handler(frame);
+    return result.node_id == 7
+        && result.failure_message == *config.unsupported_runtime_reason
+        && result.geometry_effects.empty()
+        && result.produced_outputs.empty();
+}
+
 bool partial_rerun_restores_source()
 {
     using namespace phoenix;
     smooth::InstructionConfig config;
-    config.options.max_refinement_level = 1;
+    config.max_refinement_level = scripting::numeric_literal(1.0);
     const auto handler = smooth::make_instruction_handler(config);
     std::size_t runs = 0;
     InstructionRegistry registry;
@@ -211,9 +231,11 @@ int main()
 {
     const bool publication = successful_publication_and_cache();
     const bool transactional = failure_is_transactional();
+    const bool hard_edges = hard_edges_report_runtime_unsupported();
     const bool partial = partial_rerun_restores_source();
     std::cout << "smooth publication and cache replay: " << publication << '\n'
               << "smooth transactional failure: " << transactional << '\n'
+              << "smooth hard edges runtime unsupported: " << hard_edges << '\n'
               << "smooth partial-rerun restoration: " << partial << '\n';
-    return publication && transactional && partial ? 0 : 1;
+    return publication && transactional && hard_edges && partial ? 0 : 1;
 }
