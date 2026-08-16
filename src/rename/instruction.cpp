@@ -52,6 +52,38 @@ bool base_edge_match(const std::vector<RuntimeFace>& faces,
         return false;
     if (condition.opposite_edge_label && (is_border
         || edges[edge.opposite].label != *condition.opposite_edge_label)) return false;
+    if (condition.adjacent_label1 || condition.adjacent_label2) {
+        auto matches_adjacent = [&](GeometryIndex candidate) {
+            if (candidate == invalid_geometry_index) return false;
+            if (condition.adjacent_label1 && edges[candidate].label != *condition.adjacent_label1)
+                return false;
+            if (condition.adjacent_label2) {
+                const auto other = edges[candidate].opposite;
+                if (other == invalid_geometry_index || edges[other].label != *condition.adjacent_label2)
+                    return false;
+            }
+            return true;
+        };
+        bool adjacent = false;
+        if (condition.adjacent_relation == AdjacentRelation::previous
+            || condition.adjacent_relation == AdjacentRelation::any) {
+            const auto previous = std::find_if(
+                edges.begin(),
+                edges.end(),
+                [edge_index, face = edge.face](const RuntimeHalfedge& candidate) {
+                    return candidate.face == face && candidate.next == edge_index;
+                });
+            if (previous != edges.end()) {
+                adjacent = adjacent || matches_adjacent(
+                    static_cast<GeometryIndex>(std::distance(edges.begin(), previous)));
+            }
+        }
+        if (condition.adjacent_relation == AdjacentRelation::next
+            || condition.adjacent_relation == AdjacentRelation::any) {
+            adjacent = adjacent || matches_adjacent(edge.next);
+        }
+        if (!adjacent) return false;
+    }
     return true;
 }
 

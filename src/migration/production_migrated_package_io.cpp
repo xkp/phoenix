@@ -95,6 +95,10 @@ std::vector<PackageIoDiagnostic> MigratedProjectPackageWriter::write(
     output << "schema|" << escape(package.schema_version) << "\n";
     output << "root|" << escape(package.root_function_id) << "\n";
     output << "label_fingerprint|" << package.label_registry_fingerprint << "\n";
+    for (const auto& label : package.label_ids) {
+        output << "label_id|" << escape(label.first)
+               << "|" << label.second << "\n";
+    }
 
     for (const auto& function_entry : package.functions) {
         const auto& function = function_entry.second;
@@ -151,6 +155,21 @@ std::vector<PackageIoDiagnostic> MigratedProjectPackageWriter::write(
                    << "|" << escape(payload.second.source_path.string())
                    << "|" << escape(payload.second.text) << "\n";
         }
+        for (const auto& node_data : function.instruction_node_data) {
+            output << "instruction_data|" << escape(function_entry.first)
+                   << "|" << node_data.first
+                   << "|" << escape(node_data.second) << "\n";
+        }
+        for (const auto& variable : function.numeric_variables) {
+            output << "variable|" << escape(function_entry.first)
+                   << "|" << escape(variable.first)
+                   << "|" << variable.second << "\n";
+        }
+        for (const auto& profile : function.profile_texts) {
+            output << "profile|" << escape(function_entry.first)
+                   << "|" << escape(profile.first)
+                   << "|" << escape(profile.second) << "\n";
+        }
     }
 
     return {};
@@ -183,6 +202,10 @@ PackageReadResult MigratedProjectPackageReader::read(const std::filesystem::path
             result.package.root_function_id = unescape(parts[1]);
         } else if (tag == "label_fingerprint" && parts.size() == 2) {
             result.package.label_registry_fingerprint = std::stoull(parts[1]);
+        } else if (tag == "label_id" && parts.size() == 3) {
+            result.package.label_ids.emplace(
+                unescape(parts[1]),
+                static_cast<std::int32_t>(std::stol(parts[2])));
         } else if (tag == "function" && parts.size() == 5) {
             const auto id = unescape(parts[1]);
             auto& function = result.package.functions[id];
@@ -226,6 +249,18 @@ PackageReadResult MigratedProjectPackageReader::read(const std::filesystem::path
                 payload_id,
                 unescape(parts[3]),
                 unescape(parts[4])});
+        } else if (tag == "instruction_data" && parts.size() == 4) {
+            result.package.functions[unescape(parts[1])].instruction_node_data.emplace(
+                static_cast<NodeId>(std::stoull(parts[2])),
+                unescape(parts[3]));
+        } else if (tag == "variable" && parts.size() == 4) {
+            result.package.functions[unescape(parts[1])].numeric_variables.emplace(
+                unescape(parts[2]),
+                std::stod(parts[3]));
+        } else if (tag == "profile" && parts.size() == 4) {
+            result.package.functions[unescape(parts[1])].profile_texts.emplace(
+                unescape(parts[2]),
+                unescape(parts[3]));
         } else {
             result.diagnostics.push_back(
                 {PackageIoDiagnosticCode::invalid_format, "Migrated package contains an invalid record."});

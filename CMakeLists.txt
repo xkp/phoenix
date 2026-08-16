@@ -219,6 +219,7 @@ endif()
 add_executable(phoenix_case_instruction_tests
     src/cache.cpp
     src/control/case_instruction.cpp
+    src/control/choice_instruction.cpp
     src/control/if_instruction.cpp
     src/execution.cpp
     src/geometry.cpp
@@ -1554,4 +1555,163 @@ if(MSVC)
     target_compile_options(phoenix_migrate_project_cli_tests PRIVATE /W4 /permissive-)
 else()
     target_compile_options(phoenix_migrate_project_cli_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_validate_package
+    src/graph_validation.cpp
+    src/migration/migrated_package_runtime_loader.cpp
+    src/migration/production_migrated_package_io.cpp
+    src/migration/validate_package_main.cpp
+)
+
+target_include_directories(phoenix_validate_package
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_validate_package PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_validate_package PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_run_migrated_package
+    src/cache.cpp
+    src/control/case_instruction.cpp
+    src/control/choice_instruction.cpp
+    src/control/if_instruction.cpp
+    src/control/lod_instruction.cpp
+    src/execution.cpp
+    src/extrusion/instruction.cpp
+    src/extrusion/kernel_port.cpp
+    src/extrusion/plan_builder.cpp
+    src/extrusion/profile.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/graph_validation.cpp
+    src/inset/instruction.cpp
+    src/inset/production_adapter.cpp
+    src/inset/ported/production/inset.cpp
+    src/loop/function_body.cpp
+    src/loop/geometry_transaction.cpp
+    src/loop/instruction.cpp
+    src/loop/runtime.cpp
+    src/merge/instruction.cpp
+    src/merge/production_adapter.cpp
+    src/migration/migrated_instruction_registry.cpp
+    src/migration/migrated_package_runtime_loader.cpp
+    src/migration/production_migrated_package_io.cpp
+    src/partition/instruction.cpp
+    src/partition/production_adapter.cpp
+    src/partition/working_face.cpp
+    src/partition/ported/compatibility_runtime.cpp
+    src/publication.cpp
+    src/randomness.cpp
+    src/rename/instruction.cpp
+    src/scripting/contract.cpp
+    src/scripting/expression.cpp
+    src/scripting/geometry_bindings.cpp
+    src/scripting/geometry_session.cpp
+    src/scripting/intersections3.cpp
+    src/scripting/invocation_host.cpp
+    src/scripting/primitives3.cpp
+    src/scripting/quickjs_engine.cpp
+    src/scripting/variables.cpp
+    src/select/instruction.cpp
+    src/values.cpp
+    src/working_geometry.cpp
+    src/working_geometry_builder.cpp
+    src/migration/run_migrated_package_main.cpp
+    $<TARGET_OBJECTS:phoenix_partition_production_probe>
+)
+
+target_include_directories(phoenix_run_migrated_package
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(phoenix_run_migrated_package PRIVATE qjs CGAL::CGAL)
+
+if(MSVC)
+    target_compile_options(phoenix_run_migrated_package PRIVATE
+        /W4 /permissive /Zc:strictStrings- /Zc:twoPhase- /bigobj
+        "/FI${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production_probe_compat.hpp")
+else()
+    target_compile_options(phoenix_run_migrated_package PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_run_migrated_package_cli_tests
+    src/migration/production_migrated_package_io.cpp
+    tests/run_migrated_package_cli_tests.cpp
+)
+
+target_include_directories(phoenix_run_migrated_package_cli_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_run_migrated_package_cli_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_run_migrated_package_cli_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_migrated_package_runtime_loader_tests
+    src/graph_validation.cpp
+    src/migration/migrated_package_runtime_loader.cpp
+    tests/migrated_package_runtime_loader_tests.cpp
+)
+
+target_include_directories(phoenix_migrated_package_runtime_loader_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_migrated_package_runtime_loader_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_migrated_package_runtime_loader_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_migrated_package_execution_smoke_tests
+    src/cache.cpp
+    src/execution.cpp
+    src/geometry.cpp
+    src/graph.cpp
+    src/graph_validation.cpp
+    src/migration/migrated_package_runtime_loader.cpp
+    src/migration/production_migrated_package_io.cpp
+    src/publication.cpp
+    src/randomness.cpp
+    src/values.cpp
+    tests/migrated_package_execution_smoke_tests.cpp
+)
+
+target_include_directories(phoenix_migrated_package_execution_smoke_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_migrated_package_execution_smoke_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_migrated_package_execution_smoke_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(phoenix_validate_package_cli_tests
+    src/graph_validation.cpp
+    src/migration/migrated_package_runtime_loader.cpp
+    src/migration/production_migrated_package_io.cpp
+    tests/validate_package_cli_tests.cpp
+)
+
+target_include_directories(phoenix_validate_package_cli_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(phoenix_validate_package_cli_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phoenix_validate_package_cli_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()

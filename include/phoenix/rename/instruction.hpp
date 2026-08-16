@@ -12,6 +12,7 @@ namespace phoenix::rename {
 
 enum class Target { faces, directed_edges };
 enum class LengthKind { none, any, largest, smallest };
+enum class AdjacentRelation { any, previous, next };
 
 struct Condition {
     Target target = Target::faces;
@@ -22,6 +23,9 @@ struct Condition {
     std::optional<LabelId> owning_edge_label;
     std::optional<LabelId> opposite_face_label;
     std::optional<LabelId> opposite_edge_label;
+    std::optional<LabelId> adjacent_label1;
+    std::optional<LabelId> adjacent_label2;
+    AdjacentRelation adjacent_relation = AdjacentRelation::any;
     std::optional<bool> border;
     std::optional<std::size_t> maximum_edge_count;
     double minimum_length = 0.0;

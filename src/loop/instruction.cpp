@@ -35,6 +35,8 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
         }
         auto body = config.body;
         body.loop_node_id = frame.inputs.node_id;
+        if (body.executor == nullptr) body.executor = frame.executor;
+        if (body.function == nullptr) body.function = frame.function;
         body.execution.context = frame.context;
         body.execution.call_stack = frame.call_stack;
         body.execution.element_ids = frame.element_ids;

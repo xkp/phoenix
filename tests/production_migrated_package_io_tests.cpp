@@ -23,6 +23,7 @@ bool test_round_trips_migrated_package()
     phoenix::migration::MigratedProjectPackage package;
     package.root_function_id = "ROOT@11111111-1111-1111-1111-111111111111";
     package.label_registry_fingerprint = 42;
+    package.label_ids.emplace("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA", 7);
 
     phoenix::migration::MigratedFunctionPackage function;
     function.graph.id = package.root_function_id;
@@ -42,6 +43,9 @@ bool test_round_trips_migrated_package()
         "PAYLOAD",
         "payload path",
         "line one\nvalue|with pipe"});
+    function.instruction_node_data.emplace(7, R"({"file":"PAYLOAD","method":"edges"})");
+    function.numeric_variables.emplace("HEIGHT", 4.5);
+    function.profile_texts.emplace("PROFILE", R"({"segments":[]})");
     package.functions.emplace(package.root_function_id, function);
 
     const phoenix::migration::MigratedProjectPackageWriter writer;
@@ -54,10 +58,14 @@ bool test_round_trips_migrated_package()
         && read.ok()
         && read.package.root_function_id == package.root_function_id
         && read.package.label_registry_fingerprint == 42
+        && read.package.label_ids.at("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") == 7
         && round_trip.graph.instructions.size() == 1
         && round_trip.graph.instructions.front().kind == "partition"
         && round_trip.graph.edges.size() == 1
-        && round_trip.payloads.at("PAYLOAD").text == "line one\nvalue|with pipe";
+        && round_trip.payloads.at("PAYLOAD").text == "line one\nvalue|with pipe"
+        && round_trip.instruction_node_data.at(7) == R"({"file":"PAYLOAD","method":"edges"})"
+        && round_trip.numeric_variables.at("HEIGHT") == 4.5
+        && round_trip.profile_texts.at("PROFILE") == R"({"segments":[]})";
 }
 
 bool test_reader_rejects_invalid_header()

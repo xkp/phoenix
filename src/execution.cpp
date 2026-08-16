@@ -1170,7 +1170,9 @@ InstructionWorkResult execute_instruction_work(const InstructionWorkInput& input
 {
     InstructionWorkResult result;
     const auto& instruction = *input.instruction;
-    const auto& frame = input.frame;
+    auto frame = input.frame;
+    frame.executor = input.executor;
+    frame.function = input.function;
     const auto node_id = instruction.id;
 
     result.input_owner_check = geometry_owner_for(frame.inputs.promised_inputs);

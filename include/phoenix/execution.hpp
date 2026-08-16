@@ -76,6 +76,8 @@ struct InstructionInputs {
     std::vector<PortValue> promised_inputs;
 };
 
+class FunctionExecutor;
+
 struct InstructionFailure {
     NodeId node_id = 0;
     std::optional<std::uint64_t> item_key;
@@ -97,6 +99,8 @@ struct InstructionExecutionFrame {
     ExecutionContext context;
     CallStack call_stack;
     InstructionInputs inputs;
+    const FunctionExecutor* executor = nullptr;
+    const FunctionDescriptor* function = nullptr;
     SeedDerivationInput seed_derivation;
     std::optional<SeedValue> effective_seed;
     MultiplexSeedMode multiplex_seed_mode = MultiplexSeedMode::one_seed_for_all;
