@@ -1,4 +1,7 @@
 /build/
+/artifacts/
+/vcpkg_installed/
+/tmp_build_runner.cmd
 /.tools/
 /.cache/
 /.vs/

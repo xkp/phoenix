@@ -38,6 +38,7 @@ struct InstructionConfig {
         std::optional<scripting::NumericRange> height;
         std::optional<scripting::NumericRange> length;
         std::optional<scripting::NumericRange> angle_degrees;
+        bool mirror = false;
         LabelId face_label = unassigned_label_id;
         LabelId left_label = unassigned_label_id;
         LabelId bottom_label = unassigned_label_id;
@@ -45,7 +46,12 @@ struct InstructionConfig {
         LabelId top_label = unassigned_label_id;
         LabelId skirt_label = unassigned_label_id;
     };
+    struct RuntimeProfileMapEntry {
+        LabelId source_label = unassigned_label_id;
+        std::vector<RuntimeProfileSegment> runtime_profile;
+    };
     std::vector<RuntimeProfileSegment> runtime_profile;
+    std::vector<RuntimeProfileMapEntry> runtime_profile_map;
     RepairPolicy repair_policy;
     StageMetricsSink* metrics_sink = nullptr;
 };

@@ -42,7 +42,8 @@ std::pair<double, double> Profile::direction(std::size_t index) const
 
 std::optional<KernelExtrusionInput> make_kernel_input(
     const ExtrusionWorkingFace& face,
-    ProfileRef profile,
+    const ProfileSelector& profile_for_point,
+    CGAL::Sign sign,
     LabelId bottom_label,
     LabelId right_label,
     LabelId top_label,
@@ -50,11 +51,11 @@ std::optional<KernelExtrusionInput> make_kernel_input(
     LabelId skirt_label,
     LabelId cap_label)
 {
-    if (profile == nullptr || face.boundary.size() < 3 || profile->sign() == CGAL::ZERO) {
+    if (face.boundary.size() < 3 || sign == CGAL::ZERO) {
         return std::nullopt;
     }
     KernelExtrusionInput input;
-    input.sign = profile->sign();
+    input.sign = sign;
     input.bottom_label = bottom_label;
     input.right_label = right_label;
     input.top_label = top_label;
@@ -63,9 +64,13 @@ std::optional<KernelExtrusionInput> make_kernel_input(
     input.cap_label = cap_label;
     input.boundary.reserve(face.boundary.size());
     for (const auto& point : face.boundary) {
+        const auto selected = profile_for_point(point);
+        if (selected == nullptr || selected->sign() != sign) {
+            return std::nullopt;
+        }
         input.boundary.push_back(KernelCornerInput{
             point.point,
-            profile,
+            selected,
             cap_label.is_registered() ? cap_label : face.face_label,
             point.source_vertex_id,
             point.source_halfedge_id,
@@ -73,6 +78,31 @@ std::optional<KernelExtrusionInput> make_kernel_input(
         });
     }
     return input;
+}
+
+std::optional<KernelExtrusionInput> make_kernel_input(
+    const ExtrusionWorkingFace& face,
+    ProfileRef profile,
+    LabelId bottom_label,
+    LabelId right_label,
+    LabelId top_label,
+    LabelId left_label,
+    LabelId skirt_label,
+    LabelId cap_label)
+{
+    if (profile == nullptr) {
+        return std::nullopt;
+    }
+    return make_kernel_input(
+        face,
+        [&](const ExtrusionWorkingPoint&) { return profile; },
+        profile->sign(),
+        bottom_label,
+        right_label,
+        top_label,
+        left_label,
+        skirt_label,
+        cap_label);
 }
 
 } // namespace phoenix::extrusion

@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <map>
 #include <utility>
 
 namespace phoenix::extrusion {
@@ -40,16 +41,16 @@ InstructionFailure item_failure(
         frame.call_stack};
 }
 
-std::optional<ProfileRef> evaluate_profile(
-    const InstructionConfig& config,
+std::optional<ProfileRef> evaluate_profile_segments(
+    const std::vector<InstructionConfig::RuntimeProfileSegment>& runtime_profile,
     const InstructionExecutionFrame& frame,
     std::string& error)
 {
-    if (config.runtime_profile.empty()) return config.profile;
+    if (runtime_profile.empty()) return std::nullopt;
     std::vector<ProfileSegment> segments;
-    segments.reserve(config.runtime_profile.size());
+    segments.reserve(runtime_profile.size());
     CGAL::Sign sign = CGAL::ZERO;
-    for (const auto& source : config.runtime_profile) {
+    for (const auto& source : runtime_profile) {
         auto x = scripting::evaluate_numeric_range(source.delta_x, frame);
         if (x.error) {
             error = *x.error;
@@ -106,6 +107,9 @@ std::optional<ProfileRef> evaluate_profile(
             segment.delta_x = xsign * *length * std::cos(radians);
             segment.delta_y = ysign * *length * std::sin(radians);
         }
+        if (source.mirror) {
+            segment.delta_x = -segment.delta_x;
+        }
         segment.face_label = source.face_label;
         segment.left_label = source.left_label;
         segment.bottom_label = source.bottom_label;
@@ -122,6 +126,28 @@ std::optional<ProfileRef> evaluate_profile(
     return profile;
 }
 
+std::optional<ProfileRef> evaluate_profile(
+    const InstructionConfig& config,
+    const InstructionExecutionFrame& frame,
+    std::string& error)
+{
+    if (config.runtime_profile.empty()) return config.profile;
+    return evaluate_profile_segments(config.runtime_profile, frame, error);
+}
+
+ProfileRef synthetic_label_profile(LabelId label, CGAL::Sign sign)
+{
+    if (sign == CGAL::ZERO) {
+        return nullptr;
+    }
+
+    ProfileSegment segment;
+    segment.delta_x = 0.0;
+    segment.delta_y = sign == CGAL::NEGATIVE ? -1.0 : 1.0;
+    segment.face_label = label;
+    return Profile::create({segment}, sign);
+}
+
 } // namespace
 
 InstructionHandler make_instruction_handler(InstructionConfig config)
@@ -135,16 +161,45 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
             result.failure_message = "Extrusion requires one canonical geometry input.";
             return result;
         }
-        std::string profile_error;
-        const auto profile = evaluate_profile(config, frame, profile_error);
-        if (!profile) {
-            result.failure_message = "Extrusion requires an immutable profile.";
-            if (!profile_error.empty()) result.failure_message = profile_error;
-            return result;
+
+        ProfileRef default_profile;
+        if (config.runtime_profile_map.empty()) {
+            std::string profile_error;
+            const auto evaluated = evaluate_profile(config, frame, profile_error);
+            if (!evaluated) {
+                result.failure_message = "Extrusion requires an immutable profile.";
+                if (!profile_error.empty()) result.failure_message = profile_error;
+                return result;
+            }
+            default_profile = *evaluated;
         }
         if (!frame.element_ids) {
             result.failure_message = "Extrusion requires the run-scoped element ID allocator.";
             return result;
+        }
+
+        std::map<LabelId, ProfileRef> mapped_profiles;
+        CGAL::Sign mapped_sign = CGAL::ZERO;
+        if (!config.runtime_profile_map.empty()) {
+            for (const auto& entry : config.runtime_profile_map) {
+                std::string map_error;
+                const auto evaluated = evaluate_profile_segments(
+                    entry.runtime_profile,
+                    frame,
+                    map_error);
+                if (!evaluated) {
+                    result.failure_message = "Extrusion requires an immutable profile.";
+                    if (!map_error.empty()) result.failure_message = map_error;
+                    return result;
+                }
+                if (mapped_sign == CGAL::ZERO) {
+                    mapped_sign = (*evaluated)->sign();
+                } else if (mapped_sign != (*evaluated)->sign()) {
+                    result.failure_message = "Mapped extrusion profiles must share one sign.";
+                    return result;
+                }
+                mapped_profiles[entry.source_label] = *evaluated;
+            }
         }
 
         const auto owner = geometry_owner(frame, *geometry);
@@ -168,9 +223,37 @@ InstructionHandler make_instruction_handler(InstructionConfig config)
                     ? "Could not prepare extrusion source face."
                     : prepared.diagnostics.front().message;
             } else {
-                const auto input = make_kernel_input(prepared.face, *profile,
-                    config.bottom_label, config.right_label, config.top_label,
-                    config.left_label, config.skirt_label, config.cap_label);
+                std::map<LabelId, ProfileRef> fallback_profiles;
+                const auto input = !mapped_profiles.empty()
+                    ? make_kernel_input(
+                        prepared.face,
+                        [&](const ExtrusionWorkingPoint& point) -> ProfileRef {
+                            const auto found = mapped_profiles.find(point.directed_edge_label);
+                            if (found != mapped_profiles.end()) {
+                                return found->second;
+                            }
+                            auto fallback = fallback_profiles.find(point.directed_edge_label);
+                            if (fallback != fallback_profiles.end()) {
+                                return fallback->second;
+                            }
+                            auto synthetic = synthetic_label_profile(
+                                point.directed_edge_label,
+                                mapped_sign);
+                            fallback = fallback_profiles.emplace(
+                                point.directed_edge_label,
+                                std::move(synthetic)).first;
+                            return fallback->second;
+                        },
+                        mapped_sign,
+                        config.bottom_label,
+                        config.right_label,
+                        config.top_label,
+                        config.left_label,
+                        config.skirt_label,
+                        config.cap_label)
+                    : make_kernel_input(prepared.face, default_profile,
+                        config.bottom_label, config.right_label, config.top_label,
+                        config.left_label, config.skirt_label, config.cap_label);
                 if (!input) {
                     effect.succeeded = false;
                     effect.failure_message = "Could not construct the extrusion kernel input.";

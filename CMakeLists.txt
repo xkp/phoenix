@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(CGAL REQUIRED)
 find_package(OpenSubdiv CONFIG REQUIRED)
 find_package(qjs CONFIG REQUIRED)
+find_package(boost_property_tree CONFIG REQUIRED)
 
 add_executable(phoenix_scripting_contract_tests
     src/scripting/contract.cpp
@@ -497,7 +498,7 @@ add_library(phoenix_partition_production_probe OBJECT EXCLUDE_FROM_ALL
     target_link_libraries(phoenix_partition_production_probe PRIVATE CGAL::CGAL)
     if(MSVC)
         target_compile_options(phoenix_partition_production_probe PRIVATE
-            /W4 /permissive /Zc:strictStrings- /Zc:twoPhase- /bigobj
+            /W4 /EHsc /permissive /Zc:strictStrings- /Zc:twoPhase- /bigobj
             "/FI${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production_probe_compat.hpp")
     else()
         target_compile_options(phoenix_partition_production_probe PRIVATE
@@ -1664,13 +1665,14 @@ target_include_directories(phoenix_run_migrated_package
 target_link_libraries(phoenix_run_migrated_package PRIVATE
     qjs
     CGAL::CGAL
+    Boost::property_tree
     OpenSubdiv::osdCPU_static
 )
 
 if(MSVC)
     target_compile_definitions(phoenix_run_migrated_package PRIVATE _USE_MATH_DEFINES)
     target_compile_options(phoenix_run_migrated_package PRIVATE
-        /W4 /permissive /Zc:strictStrings- /Zc:twoPhase- /bigobj
+        /W4 /EHsc /permissive /Zc:strictStrings- /Zc:twoPhase- /bigobj
         "/FI${CMAKE_CURRENT_SOURCE_DIR}/include/phoenix/partition/ported/production_probe_compat.hpp")
 else()
     target_compile_options(phoenix_run_migrated_package PRIVATE -Wall -Wextra -Wpedantic)

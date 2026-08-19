@@ -446,22 +446,28 @@ std::optional<extrusion::ProfileRef> production_profile_from_text(
     return profile;
 }
 
-std::optional<std::string> single_mapped_profile_id(const std::string& node_data)
+struct MappedProfileData {
+    std::string source_label_uid;
+    std::string profile_id;
+    bool mirror = false;
+};
+
+std::vector<MappedProfileData> mapped_profile_data(const std::string& node_data)
 {
-    const auto map_text = extract_array_text(node_data, "label_map");
-    std::optional<std::string> profile_id;
-    const std::regex item{R"regex(\{[^{}]*"to"\s*:\s*"([^"]*)"[^{}]*\})regex"};
-    for (std::sregex_iterator it{map_text.begin(), map_text.end(), item};
-         it != std::sregex_iterator{};
-         ++it) {
-        const auto current = (*it)[1].str();
-        if (!profile_id.has_value()) {
-            profile_id = current;
-        } else if (*profile_id != current) {
-            return std::nullopt;
+    std::vector<MappedProfileData> mappings;
+    for (const auto& map_item : json_object_array(node_data, "label_map")) {
+        const auto source = json_string(map_item, "from");
+        const auto profile = json_string(map_item, "to");
+        if (!source.has_value() || !profile.has_value()
+            || source->empty() || profile->empty()) {
+            continue;
         }
+        mappings.push_back(MappedProfileData{
+            *source,
+            *profile,
+            json_bool(map_item, "mirror").value_or(false)});
     }
-    return profile_id;
+    return mappings;
 }
 
 const std::string* find_profile_text(
@@ -1377,17 +1383,33 @@ AdaptResult<extrusion::InstructionConfig> adapt_extrusion(
         if (!runtime_profile.has_value()) return AdaptResult<extrusion::InstructionConfig>::unsupported("profile_unreadable_profile");
         config.runtime_profile = *runtime_profile;
     } else if (method == "map") {
-        const auto profile_id = single_mapped_profile_id(node_data);
-        if (!profile_id.has_value()) {
-            return AdaptResult<extrusion::InstructionConfig>::unsupported("map_multiple_profiles");
-        }
-        const auto* profile_text = find_profile_text(package, function, *profile_id);
-        if (profile_text == nullptr) {
+        const auto mappings = mapped_profile_data(node_data);
+        if (mappings.empty()) {
             return AdaptResult<extrusion::InstructionConfig>::unsupported("map_missing_profile");
         }
-        const auto runtime_profile = runtime_profile_from_text(package, function, *profile_text);
-        if (!runtime_profile.has_value()) return AdaptResult<extrusion::InstructionConfig>::unsupported("map_unreadable_profile");
-        config.runtime_profile = *runtime_profile;
+        for (const auto& mapping : mappings) {
+            const auto source_label = label_id_for(package, mapping.source_label_uid);
+            if (!source_label.has_value()) {
+                return AdaptResult<extrusion::InstructionConfig>::unsupported("map_missing_source_label");
+            }
+            const auto* profile_text = find_profile_text(package, function, mapping.profile_id);
+            if (profile_text == nullptr) {
+                return AdaptResult<extrusion::InstructionConfig>::unsupported("map_missing_profile");
+            }
+            auto runtime_profile = runtime_profile_from_text(package, function, *profile_text);
+            if (!runtime_profile.has_value()) {
+                return AdaptResult<extrusion::InstructionConfig>::unsupported("map_unreadable_profile");
+            }
+            if (mapping.mirror) {
+                for (auto& segment : *runtime_profile) {
+                    segment.mirror = true;
+                }
+            }
+            config.runtime_profile_map.push_back(
+                extrusion::InstructionConfig::RuntimeProfileMapEntry{
+                    *source_label,
+                    std::move(*runtime_profile)});
+        }
     } else {
         const auto sides = json_string(node_data, "sides");
         const auto side_label = sides ? label_id_for(package, *sides) : std::nullopt;
@@ -1402,7 +1424,9 @@ AdaptResult<extrusion::InstructionConfig> adapt_extrusion(
         segment.skirt_label = config.skirt_label;
         config.runtime_profile = {std::move(segment)};
     }
-    if (!config.profile && config.runtime_profile.empty()) {
+    if (!config.profile
+        && config.runtime_profile.empty()
+        && config.runtime_profile_map.empty()) {
         return AdaptResult<extrusion::InstructionConfig>::unsupported("invalid_profile");
     }
     return AdaptResult<extrusion::InstructionConfig>::adapted(std::move(config));
@@ -1723,6 +1747,21 @@ bool load_partition_condition(
     if (type == "fartherThan") {
         return add_partition_distance_constraint(
             context, model, owner, data, true, context.value(data, "value", 0.0), false, {});
+    }
+    if (type == "distanceRange") {
+        const auto has_min = data.get_optional<double>("min").has_value()
+            || data.get_optional<std::string>("min").has_value();
+        const auto has_max = data.get_optional<double>("max").has_value()
+            || data.get_optional<std::string>("max").has_value();
+        return add_partition_distance_constraint(
+            context,
+            model,
+            owner,
+            data,
+            has_min,
+            context.value(data, "min", 0.0),
+            has_max,
+            context.value(data, "max", 0.0));
     }
     if (type == "parallel" || type == "perpendicular" || type == "exactAngle") {
         const auto reference = data.get<std::string>("reference", {});

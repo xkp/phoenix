@@ -5,6 +5,7 @@
 #include <CGAL/enum.h>
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -64,6 +65,19 @@ struct KernelExtrusionInput {
     LabelId skirt_label = unassigned_label_id;
     LabelId cap_label = unassigned_label_id;
 };
+
+using ProfileSelector = std::function<ProfileRef(const ExtrusionWorkingPoint&)>;
+
+[[nodiscard]] std::optional<KernelExtrusionInput> make_kernel_input(
+    const ExtrusionWorkingFace& face,
+    const ProfileSelector& profile_for_point,
+    CGAL::Sign sign,
+    LabelId bottom_label,
+    LabelId right_label,
+    LabelId top_label,
+    LabelId left_label,
+    LabelId skirt_label,
+    LabelId cap_label);
 
 [[nodiscard]] std::optional<KernelExtrusionInput> make_kernel_input(
     const ExtrusionWorkingFace& face,
